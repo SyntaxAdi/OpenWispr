@@ -73,18 +73,22 @@ class BubbleManager(
         val container = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER
-            background = ctx.getDrawable(R.drawable.bg_collapsed)
-            clipToOutline = true
-            elevation = 10f
+            background = null
+            clipToOutline = false
+            elevation = 8f
         }
         val collapsed = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER
-            setPadding(8,8,8,8)
+            setPadding(0,0,0,0)
         }
         val mic = ImageView(ctx).apply {
-            setImageResource(R.drawable.ic_mic)
-            layoutParams = LinearLayout.LayoutParams(sizePx - 18, sizePx - 18)
+            setImageResource(R.drawable.ic_bubble)
+            // Bubble artwork has built-in circular padding; fill collapsed container edge-to-edge for no square halo
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            layoutParams = LinearLayout.LayoutParams(sizePx, sizePx)
+            clipToOutline = true
+            elevation = 0f
         }
         collapsed.addView(mic)
         val expanded = LinearLayout(ctx).apply {
@@ -247,14 +251,14 @@ class BubbleManager(
         expandedGroup?.visibility = View.GONE
         statusText?.visibility = View.GONE
         progress?.visibility = View.GONE
-        bubbleView?.background = service.getDrawable(R.drawable.bg_collapsed)
+        bubbleView?.background = null
         scope.launch {
             val dpVal = settings.bubbleDpFlow.first()
             handler.post {
                 params?.let { p -> p.width = dp(dpVal); p.height = dp(dpVal); if (isAttached) try { wm.updateViewLayout(bubbleView, p) } catch (_: Exception) {} }
             }
         }
-        (bubbleView as? ViewGroup)?.getChildAt(0)?.background = service.getDrawable(R.drawable.bg_collapsed)
+        (bubbleView as? ViewGroup)?.getChildAt(0)?.background = null
     }
     private fun expand() {
         val p = params ?: return
