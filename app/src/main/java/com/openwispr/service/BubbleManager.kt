@@ -123,18 +123,36 @@ class BubbleManager(
             isClickable = true
             isFocusable = true
         }
-        val tickSpin = ProgressBar(ctx).apply {
+        val tickSpin = ProgressBar(ctx, null, android.R.attr.progressBarStyleSmall).apply {
             isIndeterminate = true
             visibility = View.GONE
-            layoutParams = FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER)
-            // tint to white so visible on expanded pill
+            layoutParams = FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER)
+            // tint to white so visible on expanded pill (#2A2A3A)
             indeterminateTintList = android.content.res.ColorStateList.valueOf(0xFFFFFFFF.toInt())
+            indeterminateTintMode = android.graphics.PorterDuff.Mode.SRC_IN
+            isDuplicateParentStateEnabled = false
         }
         tickHolder.addView(tick)
         tickHolder.addView(tickSpin)
         tickHolder.isClickable = true
         tickHolder.isFocusable = true
-        val tickClick = View.OnClickListener { finishRecording() }
+        val tickClick = View.OnClickListener {
+            // guard: single tap -> immediate visual feedback, ignore double taps
+            if (state != State.Recording) return@OnClickListener
+            // swap immediately on main thread before any blocking work
+            tick.visibility = View.GONE
+            tickSpin.visibility = View.VISIBLE
+            tickSpin.bringToFront()
+            tickSpin.invalidate()
+            tickHolder.isEnabled = false
+            tickHolder.isClickable = false
+            tickHolder.alpha = 0.9f
+            closeIcon?.let { it.isEnabled = false; it.alpha = 0.35f; it.isClickable = false }
+            tickHolder.invalidate()
+            // force overlay window to redraw (TYPE_ACCESSIBILITY_OVERLAY can cache)
+            try { bubbleView?.let { v -> wm.updateViewLayout(v, params) } } catch (_: Exception) {}
+            finishRecording()
+        }
         tick.setOnClickListener(tickClick)
         tickHolder.setOnClickListener(tickClick)
         val status = TextView(ctx).apply {
@@ -282,11 +300,12 @@ class BubbleManager(
         progress?.visibility = View.GONE
         bubbleView?.background = null
         // restore tick: hide loader, show check, re-enable both icons
-        tickIcon?.visibility = View.VISIBLE
-        tickLoader?.visibility = View.GONE
-        tickWrap?.isEnabled = true; tickWrap?.alpha = 1f; tickWrap?.isClickable = true
-        tickIcon?.isEnabled = true; tickIcon?.alpha = 1f
-        closeIcon?.isEnabled = true; closeIcon?.alpha = 1f
+        tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f; isEnabled = true; isClickable = true }
+        tickLoader?.apply { visibility = View.GONE; clearAnimation() }
+        tickWrap?.apply { isEnabled = true; alpha = 1f; isClickable = true }
+        closeIcon?.apply { isEnabled = true; alpha = 1f; isClickable = true }
+        // ensure overlay redraw reflects restored tick
+        try { bubbleView?.let { v -> params?.let { p -> wm.updateViewLayout(v, p) } } } catch (_: Exception) {}
         scope.launch {
             val dpVal = settings.bubbleDpFlow.first()
             handler.post {
@@ -361,20 +380,31 @@ class BubbleManager(
         state = State.Processing
         timeoutRunnable?.let { handler.removeCallbacks(it) }
         amplitudeRunnable?.let { handler.removeCallbacks(it) }
-        // Immediate tick feedback: swap check → spinner, disable close so only processing shows
-        tickIcon?.visibility = View.INVISIBLE
-        tickLoader?.visibility = View.VISIBLE
-        tickWrap?.isEnabled = false; tickWrap?.alpha = 0.85f; tickWrap?.isClickable = false
-        closeIcon?.isEnabled = false; closeIcon?.alpha = 0.35f
+        // Guaranteed tick→spinner swap: handles both tap (already swapped in click listener) and auto-timeout path.
+        // Use GONE (not INVISIBLE) so spinner is the only drawable in the FrameLayout and gets full draw priority.
+        tickIcon?.visibility = View.GONE
+        tickLoader?.apply {
+            visibility = View.VISIBLE
+            bringToFront()
+            // restart indeterminate animation (required after GONE→VISIBLE on overlay windows)
+            indeterminateDrawable?.setVisible(true, true)
+            isIndeterminate = true
+            invalidate()
+        }
+        tickWrap?.apply { isEnabled = false; alpha = 0.9f; isClickable = false; invalidate() }
+        closeIcon?.apply { isEnabled = false; alpha = 0.35f; isClickable = false }
+        // Force overlay window composite to reflect swap immediately - recorder.stop() blocks ~100ms
+        try { bubbleView?.let { v -> params?.let { p -> wm.updateViewLayout(v, p) } } } catch (_: Exception) {}
+        handler.post { try { bubbleView?.invalidate(); tickLoader?.invalidate() } catch (_: Exception) {} }
         val file = recorder.stop()
         waveform?.setIdle()
         statusText?.apply { text = "Transcribing..."; visibility = View.VISIBLE }
         progress?.visibility = View.GONE // status text is the main indicator; per-tick spinner is the tick action loader
         if (file == null || !file.exists() || file.length() < 800) {
             statusText?.text = "No audio"
-            // restore tick before collapsing
-            tickIcon?.visibility = View.VISIBLE; tickLoader?.visibility = View.GONE
-            closeIcon?.isEnabled = true; closeIcon?.alpha = 1f
+            tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
+            tickLoader?.visibility = View.GONE
+            closeIcon?.apply { isEnabled = true; alpha = 1f; isClickable = true }
             handler.postDelayed({ state = State.Idle; service.stopListeningNotification(); showCollapsedInternal(); service.requestHideCheck() }, 1200)
             file?.delete(); return
         }
@@ -386,8 +416,9 @@ class BubbleManager(
             if (apiKey.isBlank()) {
                 withContext(Dispatchers.Main) {
                     statusText?.text = "Set API key in Settings"
-                    tickIcon?.visibility = View.VISIBLE; tickLoader?.visibility = View.GONE
-                    closeIcon?.isEnabled = true; closeIcon?.alpha = 1f
+                    tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
+                    tickLoader?.visibility = View.GONE
+                    closeIcon?.apply { isEnabled = true; alpha = 1f; isClickable = true }
                     handler.postDelayed({ state = State.Idle; service.stopListeningNotification(); showCollapsedInternal() }, 1600)
                 }
                 file.delete(); return@launch
@@ -395,8 +426,9 @@ class BubbleManager(
             when (val tr = groq.transcribe(baseUrl, apiKey, whisper, file)) {
                 is GroqResult.Error -> withContext(Dispatchers.Main) {
                     statusText?.text = tr.message.take(60)
-                    tickIcon?.visibility = View.VISIBLE; tickLoader?.visibility = View.GONE
-                    closeIcon?.isEnabled = true; closeIcon?.alpha = 1f
+                    tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
+                    tickLoader?.visibility = View.GONE
+                    closeIcon?.apply { isEnabled = true; alpha = 1f; isClickable = true }
                     handler.postDelayed({ state = State.Idle; service.stopListeningNotification(); showCollapsedInternal(); service.requestHideCheck() }, 1800)
                 }
                 is GroqResult.Success -> {
@@ -406,14 +438,16 @@ class BubbleManager(
                             val safeRaw = com.openwispr.util.Constants.sanitizeOutput(raw)
                             val injected = TextInjector.inject(service, safeRaw)
                             statusText?.text = if (injected) "Pasted ✓" else "Copied"
-                            tickIcon?.visibility = View.VISIBLE; tickLoader?.visibility = View.GONE
+                            tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
+                            tickLoader?.visibility = View.GONE
                             handler.postDelayed({ state = State.Idle; service.stopListeningNotification(); showCollapsedInternal(); service.requestHideCheck() }, 1000)
                         }
                         is GroqResult.Success -> withContext(Dispatchers.Main) {
                             val clean = rf.data
                             val injected = TextInjector.inject(service, clean)
                             statusText?.text = if (injected) "Pasted ✓" else "Copied"
-                            tickIcon?.visibility = View.VISIBLE; tickLoader?.visibility = View.GONE
+                            tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
+                            tickLoader?.visibility = View.GONE
                             handler.postDelayed({ state = State.Idle; service.stopListeningNotification(); showCollapsedInternal(); service.requestHideCheck() }, 900)
                         }
                     }
