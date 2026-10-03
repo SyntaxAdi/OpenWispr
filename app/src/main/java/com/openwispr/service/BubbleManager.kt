@@ -130,32 +130,117 @@ class BubbleManager(
         waveform = wave
         statusText = status
         progress = prog
-        collapsed.setOnClickListener { startRecording() }
-        mic.setOnClickListener { startRecording() }
-        container.setOnClickListener { if (state == State.Idle) startRecording() }
-        var initialX = 0; var initialY = 0; var initialTouchX = 0f; var initialTouchY = 0f; var moved = false
-        val touchListener = View.OnTouchListener { _, ev ->
+        // --- Draggable bubble: tap vs drag, TOP|START gravity, persisted position, snap to edge ---
+        var initialX = 0
+        var initialY = 0
+        var initialTouchX = 0f
+        var initialTouchY = 0f
+        var moved = false
+        var downTime = 0L
+        val touchSlop = dp(8)
+        val touchListener = View.OnTouchListener { v, ev ->
+            if (state != State.Idle) return@OnTouchListener false
+            val p = params
             when (ev.action) {
-                MotionEvent.ACTION_DOWN -> { initialX = params!!.x; initialY = params!!.y; initialTouchX = ev.rawX; initialTouchY = ev.rawY; moved = false; true }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = (ev.rawX - initialTouchX).toInt()
-                    val dy = (ev.rawY - initialTouchY).toInt()
-                    if (abs(dx) > 8 || abs(dy) > 8) moved = true
-                    if (moved) { params!!.x = initialX + dx; params!!.y = initialY + dy; try { wm.updateViewLayout(bubbleView, params) } catch (_: Exception) {} }
+                MotionEvent.ACTION_DOWN -> {
+                    if (p == null) return@OnTouchListener false
+                    initialX = p.x
+                    initialY = p.y
+                    initialTouchX = ev.rawX
+                    initialTouchY = ev.rawY
+                    moved = false
+                    downTime = System.currentTimeMillis()
                     true
                 }
-                MotionEvent.ACTION_UP -> true
+                MotionEvent.ACTION_MOVE -> {
+                    if (p == null) return@OnTouchListener true
+                    val dx = (ev.rawX - initialTouchX).toInt()
+                    val dy = (ev.rawY - initialTouchY).toInt()
+                    if (!moved && (abs(dx) > touchSlop || abs(dy) > touchSlop)) moved = true
+                    if (moved) {
+                        val dm = service.resources.displayMetrics
+                        val w = p.width
+                        val h = p.height
+                        var nx = initialX + dx
+                        var ny = initialY + dy
+                        nx = nx.coerceIn(0, (dm.widthPixels - w).coerceAtLeast(0))
+                        ny = ny.coerceIn(0, (dm.heightPixels - h - dp(24)).coerceAtLeast(0))
+                        p.x = nx
+                        p.y = ny
+                        try { wm.updateViewLayout(bubbleView, p) } catch (_: Exception) {}
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (moved) {
+                        val curP = params ?: return@OnTouchListener true
+                        val dm = service.resources.displayMetrics
+                        val margin = dp(8)
+                        val mid = dm.widthPixels / 2
+                        val targetX = if (curP.x + curP.width / 2 < mid) margin else dm.widthPixels - curP.width - margin
+                        val startX = curP.x
+                        val finalY = curP.y
+                        if (startX != targetX) {
+                            val anim = ValueAnimator.ofInt(startX, targetX).apply {
+                                duration = 180
+                                interpolator = DecelerateInterpolator()
+                                addUpdateListener { a ->
+                                    curP.x = a.animatedValue as Int
+                                    try { wm.updateViewLayout(bubbleView, curP) } catch (_: Exception) {}
+                                }
+                            }
+                            anim.start()
+                        }
+                        scope.launch {
+                            kotlinx.coroutines.delay(220)
+                            try { settings.setBubblePos(targetX, finalY) } catch (_: Exception) {}
+                        }
+                        v?.performClick()
+                        true
+                    } else {
+                        if (System.currentTimeMillis() - downTime < 800) {
+                            v?.performClick()
+                            startRecording()
+                        }
+                        true
+                    }
+                }
+                MotionEvent.ACTION_CANCEL -> { moved = false; true }
                 else -> false
             }
         }
+        container.setOnTouchListener(touchListener)
+        collapsed.setOnTouchListener(touchListener)
+        mic.setOnTouchListener(touchListener)
         outer.setOnTouchListener(touchListener)
+        container.isClickable = true
+        collapsed.isClickable = true
+        outer.isClickable = true
         bubbleView = outer
+        val dm = service.resources.displayMetrics
+        val defaultX = (dm.widthPixels - sizePx - dp(24)).coerceAtLeast(dp(8))
+        val defaultY = (dm.heightPixels - sizePx - dp(220) - dp(48)).coerceAtLeast(dp(100))
         params = WindowManager.LayoutParams(
             sizePx, sizePx,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.BOTTOM or Gravity.END; x = 24; y = 220 }
+        ).apply { gravity = Gravity.TOP or Gravity.START; x = defaultX; y = defaultY }
+        scope.launch {
+            try {
+                val sx = settings.bubbleXFlow.first()
+                val sy = settings.bubbleYFlow.first()
+                if (sx != Int.MIN_VALUE && sy != Int.MIN_VALUE) {
+                    handler.post {
+                        params?.let { p ->
+                            p.x = sx.coerceIn(0, (dm.widthPixels - p.width).coerceAtLeast(0))
+                            p.y = sy.coerceIn(0, (dm.heightPixels - p.height).coerceAtLeast(0))
+                            if (isAttached) try { wm.updateViewLayout(bubbleView, p) } catch (_: Exception) {}
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
     }
     private fun showCollapsedInternal() {
         collapsedGroup?.visibility = View.VISIBLE
