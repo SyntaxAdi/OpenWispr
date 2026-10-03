@@ -34,17 +34,22 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
 
+    // Keep JDK 26 as system default — Gradle will auto-provision JDK 17 for this build.
+    kotlin {
+        jvmToolchain(17)
+    }
+
     buildFeatures {
         compose = true
         viewBinding = true
     }
-    composeOptions { kotlinCompilerExtensionVersion = "1.5.8" }
+    composeOptions { kotlinCompilerExtensionVersion = "1.5.13" }
 
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
 }
 
 dependencies {
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 
     // Compose BOM - keep minimal
     val composeBom = platform("androidx.compose:compose-bom:2024.02.00")
