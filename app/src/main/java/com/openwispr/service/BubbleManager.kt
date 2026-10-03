@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.*
 import android.view.animation.DecelerateInterpolator
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -39,6 +40,10 @@ class BubbleManager(
     private var waveform: WaveformView? = null
     private var statusText: TextView? = null
     private var progress: ProgressBar? = null
+    private var tickIcon: ImageView? = null
+    private var tickLoader: ProgressBar? = null
+    private var tickWrap: FrameLayout? = null
+    private var closeIcon: ImageView? = null
     private var state: State = State.Idle
     private var amplitudeRunnable: Runnable? = null
     private var timeoutRunnable: Runnable? = null
@@ -107,12 +112,31 @@ class BubbleManager(
             // Quarter-size waveform: 48dp wide (was weight=1 ~168dp flex) — true 1/4 length, compact pill
             layoutParams = LinearLayout.LayoutParams(dp(48), dp(24)).apply { setMargins(4,0,4,0) }
         }
+        // Tick + inline loader: tapping ✓ swaps to spinner so user knows submit succeeded; restores on collapse
+        val tickHolder = FrameLayout(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
+        }
         val tick = ImageView(ctx).apply {
             setImageResource(R.drawable.ic_tick)
             setPadding(10,10,10,10)
-            layoutParams = LinearLayout.LayoutParams(dp(44),dp(44))
-            setOnClickListener { finishRecording() }
+            layoutParams = FrameLayout.LayoutParams(dp(44), dp(44), Gravity.CENTER)
+            isClickable = true
+            isFocusable = true
         }
+        val tickSpin = ProgressBar(ctx).apply {
+            isIndeterminate = true
+            visibility = View.GONE
+            layoutParams = FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER)
+            // tint to white so visible on expanded pill
+            indeterminateTintList = android.content.res.ColorStateList.valueOf(0xFFFFFFFF.toInt())
+        }
+        tickHolder.addView(tick)
+        tickHolder.addView(tickSpin)
+        tickHolder.isClickable = true
+        tickHolder.isFocusable = true
+        val tickClick = View.OnClickListener { finishRecording() }
+        tick.setOnClickListener(tickClick)
+        tickHolder.setOnClickListener(tickClick)
         val status = TextView(ctx).apply {
             text = ""; textSize = 11f; setTextColor(0xCCFFFFFF.toInt()); visibility = View.GONE
             setPadding(8,0,8,0)
@@ -120,7 +144,7 @@ class BubbleManager(
         val prog = ProgressBar(ctx).apply { visibility = View.GONE; isIndeterminate = true }
         expanded.addView(close)
         expanded.addView(wave)
-        expanded.addView(tick)
+        expanded.addView(tickHolder)
         container.addView(collapsed)
         container.addView(expanded)
         val outer = LinearLayout(ctx).apply {
@@ -133,6 +157,10 @@ class BubbleManager(
         collapsedGroup = collapsed
         expandedGroup = expanded
         waveform = wave
+        tickIcon = tick
+        tickLoader = tickSpin
+        tickWrap = tickHolder
+        closeIcon = close
         statusText = status
         progress = prog
         // --- Draggable bubble: tap vs drag, TOP|START gravity, persisted position, snap to edge ---
@@ -253,6 +281,12 @@ class BubbleManager(
         statusText?.visibility = View.GONE
         progress?.visibility = View.GONE
         bubbleView?.background = null
+        // restore tick: hide loader, show check, re-enable both icons
+        tickIcon?.visibility = View.VISIBLE
+        tickLoader?.visibility = View.GONE
+        tickWrap?.isEnabled = true; tickWrap?.alpha = 1f; tickWrap?.isClickable = true
+        tickIcon?.isEnabled = true; tickIcon?.alpha = 1f
+        closeIcon?.isEnabled = true; closeIcon?.alpha = 1f
         scope.launch {
             val dpVal = settings.bubbleDpFlow.first()
             handler.post {
@@ -327,12 +361,20 @@ class BubbleManager(
         state = State.Processing
         timeoutRunnable?.let { handler.removeCallbacks(it) }
         amplitudeRunnable?.let { handler.removeCallbacks(it) }
+        // Immediate tick feedback: swap check → spinner, disable close so only processing shows
+        tickIcon?.visibility = View.INVISIBLE
+        tickLoader?.visibility = View.VISIBLE
+        tickWrap?.isEnabled = false; tickWrap?.alpha = 0.85f; tickWrap?.isClickable = false
+        closeIcon?.isEnabled = false; closeIcon?.alpha = 0.35f
         val file = recorder.stop()
         waveform?.setIdle()
         statusText?.apply { text = "Transcribing..."; visibility = View.VISIBLE }
-        progress?.visibility = View.VISIBLE
+        progress?.visibility = View.GONE // status text is the main indicator; per-tick spinner is the tick action loader
         if (file == null || !file.exists() || file.length() < 800) {
             statusText?.text = "No audio"
+            // restore tick before collapsing
+            tickIcon?.visibility = View.VISIBLE; tickLoader?.visibility = View.GONE
+            closeIcon?.isEnabled = true; closeIcon?.alpha = 1f
             handler.postDelayed({ state = State.Idle; service.stopListeningNotification(); showCollapsedInternal(); service.requestHideCheck() }, 1200)
             file?.delete(); return
         }
@@ -344,7 +386,8 @@ class BubbleManager(
             if (apiKey.isBlank()) {
                 withContext(Dispatchers.Main) {
                     statusText?.text = "Set API key in Settings"
-                    progress?.visibility = View.GONE
+                    tickIcon?.visibility = View.VISIBLE; tickLoader?.visibility = View.GONE
+                    closeIcon?.isEnabled = true; closeIcon?.alpha = 1f
                     handler.postDelayed({ state = State.Idle; service.stopListeningNotification(); showCollapsedInternal() }, 1600)
                 }
                 file.delete(); return@launch
@@ -352,7 +395,8 @@ class BubbleManager(
             when (val tr = groq.transcribe(baseUrl, apiKey, whisper, file)) {
                 is GroqResult.Error -> withContext(Dispatchers.Main) {
                     statusText?.text = tr.message.take(60)
-                    progress?.visibility = View.GONE
+                    tickIcon?.visibility = View.VISIBLE; tickLoader?.visibility = View.GONE
+                    closeIcon?.isEnabled = true; closeIcon?.alpha = 1f
                     handler.postDelayed({ state = State.Idle; service.stopListeningNotification(); showCollapsedInternal(); service.requestHideCheck() }, 1800)
                 }
                 is GroqResult.Success -> {
@@ -362,14 +406,14 @@ class BubbleManager(
                             val safeRaw = com.openwispr.util.Constants.sanitizeOutput(raw)
                             val injected = TextInjector.inject(service, safeRaw)
                             statusText?.text = if (injected) "Pasted ✓" else "Copied"
-                            progress?.visibility = View.GONE
+                            tickIcon?.visibility = View.VISIBLE; tickLoader?.visibility = View.GONE
                             handler.postDelayed({ state = State.Idle; service.stopListeningNotification(); showCollapsedInternal(); service.requestHideCheck() }, 1000)
                         }
                         is GroqResult.Success -> withContext(Dispatchers.Main) {
                             val clean = rf.data
                             val injected = TextInjector.inject(service, clean)
                             statusText?.text = if (injected) "Pasted ✓" else "Copied"
-                            progress?.visibility = View.GONE
+                            tickIcon?.visibility = View.VISIBLE; tickLoader?.visibility = View.GONE
                             handler.postDelayed({ state = State.Idle; service.stopListeningNotification(); showCollapsedInternal(); service.requestHideCheck() }, 900)
                         }
                     }
