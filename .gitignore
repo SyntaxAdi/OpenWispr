@@ -5,3 +5,5 @@ app/build/
 *.iml
 local.properties
 .DS_Store
+# build.sh output — keep APKs local, don't commit 16MB binaries
+OpenWispr-*.apk

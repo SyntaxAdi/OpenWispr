@@ -109,7 +109,7 @@ class BubbleManager(
             setOnClickListener { finishRecording() }
         }
         val status = TextView(ctx).apply {
-            text = ""; textSize = 11f; setTextColor(0xCCFFFFFF); visibility = View.GONE
+            text = ""; textSize = 11f; setTextColor(0xCCFFFFFF.toInt()); visibility = View.GONE
             setPadding(8,0,8,0)
         }
         val prog = ProgressBar(ctx).apply { visibility = View.GONE; isIndeterminate = true }
