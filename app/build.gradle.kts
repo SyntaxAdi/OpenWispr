@@ -11,8 +11,14 @@ android {
         applicationId = "com.openwispr"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        // Auto-increment from git history so `adb install -r` / tapping APK over old build always replaces code.
+        // Fallback to 11 if git unavailable (container shallow clone).
+        val gitCount = try {
+            providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }
+                .standardOutput.asText.get().trim().toInt()
+        } catch (_: Exception) { 11 }
+        versionCode = gitCount.coerceAtLeast(11)
+        versionName = "1.1.0"
         vectorDrawables { useSupportLibrary = true }
     }
 
