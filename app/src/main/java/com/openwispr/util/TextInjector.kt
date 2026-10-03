@@ -4,48 +4,102 @@ import android.accessibilityservice.AccessibilityService
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
 
 object TextInjector {
     fun inject(service: AccessibilityService, text: String): Boolean {
-        val safe = sanitize(text)
-        // Try direct insertion at focused node
-        val focused = service.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: service.rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        var safe = sanitize(text)
+        val focused = service.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            ?: service.rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        val hintFocused = focused?.let { getHint(it) }
+        if (!hintFocused.isNullOrBlank()) {
+            safe = stripHintPrefix(safe, hintFocused)
+            safe = sanitize(safe)
+        }
         if (focused != null && tryDirect(focused, safe)) return true
-        // Fallback: search any editable focused node via tree
         val fallback = findEditableFocused(service.rootInActiveWindow)
         if (fallback != null && tryDirect(fallback, safe)) return true
-        // Clipboard fallback
         return copyToClipboard(service, safe)
     }
 
     private fun tryDirect(node: AccessibilityNodeInfo, text: String): Boolean {
         return try {
             if (!node.isEditable) return false
-            // Check password
             if ((node.inputType and 0x80) != 0) return false
-            // IMPORTANT bugfix: was always appending existing+text, which duplicated the
-            // previous message prefix bug on some keyboards. Now we correctly insert at
-            // cursor / replace selection, and only append as last resort.
-            val existing = node.text?.toString()
-            // Try to preserve cursor/selection: if node already has text, insert at end with a space separator if needed
-            val needsSpace = !existing.isNullOrEmpty() && !existing.endsWith(" ") && !existing.endsWith("\n") && text.isNotEmpty() && !text.startsWith(" ") && !text.startsWith("\n") && !text.startsWith(",") && !text.startsWith(".") && !text.startsWith("!") && !text.startsWith("?") && !text.startsWith(":") && !text.startsWith(";")
-            val toSet = if (existing.isNullOrEmpty()) text else existing + (if (needsSpace) " " else "") + text
-            val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, toSet) }
-            val ok = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-            if (ok) return true
-            // Try clipboard paste as second attempt on same node
-            false
+            val existing = effectiveExisting(node)
+            val hint = getHint(node)
+            var clean = stripHintPrefix(text, hint)
+            clean = sanitize(clean)
+            if (clean.isEmpty()) return false
+            val needsSpace = !existing.isNullOrEmpty() &&
+                !existing.endsWith(" ") && !existing.endsWith("\n") &&
+                clean.isNotEmpty() && !clean.startsWith(" ") && !clean.startsWith("\n") &&
+                !clean.startsWith(",") && !clean.startsWith(".") && !clean.startsWith("!") &&
+                !clean.startsWith("?") && !clean.startsWith(":") && !clean.startsWith(";")
+            val toSet = if (existing.isNullOrEmpty()) clean else existing + (if (needsSpace) " " else "") + clean
+            val args = Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, toSet.trimStart())
+            }
+            node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
         } catch (_: Exception) { false }
     }
 
+    private fun getHint(node: AccessibilityNodeInfo): String? {
+        return try {
+            if (Build.VERSION.SDK_INT >= 26) {
+                val h = node.hintText?.toString()
+                if (!h.isNullOrBlank()) return h
+            }
+            null
+        } catch (_: Exception) { null }
+    }
+
+    private fun effectiveExisting(node: AccessibilityNodeInfo): String? {
+        val raw = node.text?.toString()
+        if (raw.isNullOrEmpty()) return null
+        val hint = getHint(node)
+        if (!hint.isNullOrBlank()) {
+            val r = raw.trim()
+            val h = hint.trim()
+            if (r.equals(h, ignoreCase = true)) return null
+            // trim trailing dots and ellipsis - avoid unicode ellipsis char to keep file ascii-safe
+            val rNorm = r.trimEnd('.', ' ', '\u2026')
+            val hNorm = h.trimEnd('.', ' ', '\u2026')
+            if (rNorm.equals(hNorm, ignoreCase = true)) return null
+        } else {
+            val normalized = raw.trim()
+            val commonHints = setOf(
+                "Message", "Message...", "Type a message", "Type a message...", "Type your message",
+                "Search", "Search...", "Ask anything", "Write a message", "Enter message", "Type something"
+            )
+            if (normalized in commonHints) return null
+        }
+        return raw
+    }
+
+    private fun stripHintPrefix(text: String, hint: String?): String {
+        if (hint.isNullOrBlank()) return text
+        val h = hint.trim()
+        if (h.isEmpty()) return text
+        val tTrim = text.trim()
+        if (tTrim.length <= h.length) return text
+        if (tTrim.startsWith(h, ignoreCase = true)) {
+            val after = tTrim.substring(h.length)
+            if (after.isEmpty()) return ""
+            val firstChar = after[0]
+            if (firstChar == ' ' || firstChar == ':' || firstChar == '-' || firstChar == ',' || firstChar == '\n') {
+                return after.trimStart(' ', ':', '-', ',', '\n').trimStart()
+            }
+        }
+        return text
+    }
+
     private fun sanitize(t: String): String {
-        // Belt-and-suspenders: also strip here so clipboard fallback is clean even if
-        // caller forgets. Covers "Message: hello" injected via Whisper/Llama.
         var s = t.trim()
-        val re = Regex("""^(\s*(Message|Cleaned(\s*text)?|Transcription|Output|Result|Refined|Assistant)\s*[:\-–—]\s*)+""", RegexOption.IGNORE_CASE)
+        val re = Regex("""^(\s*(Message|Cleaned(\s*text)?|Transcription|Output|Result|Refined|Assistant)\s*[:\-]\s*)+""", RegexOption.IGNORE_CASE)
         s = re.replace(s, "")
         s = s.removeSurrounding("\"").removeSurrounding("'").trim()
         return s
@@ -54,10 +108,10 @@ object TextInjector {
     fun copyToClipboard(context: Context, text: String): Boolean {
         return try {
             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val safe = sanitize(text)
+            var safe = sanitize(text)
+            safe = safe.trim()
             cm.setPrimaryClip(ClipData.newPlainText("Open Wispr", safe))
-            Toast.makeText(context, "Copied to clipboard — paste in text field", Toast.LENGTH_LONG).show()
-            // Try paste via accessibility after copy if node exists (some keyboards accept paste)
+            Toast.makeText(context, "Copied to clipboard - paste in text field", Toast.LENGTH_LONG).show()
             tryPasteFromClipboard(context)
             true
         } catch (_: Exception) { false }
@@ -66,7 +120,8 @@ object TextInjector {
     private fun tryPasteFromClipboard(context: Context) {
         if (context !is AccessibilityService) return
         try {
-            val focused = context.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: context.rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            val focused = context.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                ?: context.rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
             focused?.performAction(AccessibilityNodeInfo.ACTION_PASTE)
         } catch (_: Exception) {}
     }
