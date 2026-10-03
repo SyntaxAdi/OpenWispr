@@ -269,7 +269,8 @@ class BubbleManager(
                     val raw = tr.data
                     when (val rf = groq.refine(baseUrl, apiKey, llama, raw)) {
                         is GroqResult.Error -> withContext(Dispatchers.Main) {
-                            val injected = TextInjector.inject(service, raw)
+                            val safeRaw = com.openwispr.util.Constants.sanitizeOutput(raw)
+                            val injected = TextInjector.inject(service, safeRaw)
                             statusText?.text = if (injected) "Pasted ✓" else "Copied"
                             progress?.visibility = View.GONE
                             handler.postDelayed({ state = State.Idle; service.stopListeningNotification(); showCollapsedInternal(); service.requestHideCheck() }, 1000)

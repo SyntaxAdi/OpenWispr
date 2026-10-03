@@ -10,14 +10,15 @@ import android.widget.Toast
 
 object TextInjector {
     fun inject(service: AccessibilityService, text: String): Boolean {
+        val safe = sanitize(text)
         // Try direct insertion at focused node
         val focused = service.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: service.rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-        if (focused != null && tryDirect(focused, text)) return true
+        if (focused != null && tryDirect(focused, safe)) return true
         // Fallback: search any editable focused node via tree
         val fallback = findEditableFocused(service.rootInActiveWindow)
-        if (fallback != null && tryDirect(fallback, text)) return true
+        if (fallback != null && tryDirect(fallback, safe)) return true
         // Clipboard fallback
-        return copyToClipboard(service, text)
+        return copyToClipboard(service, safe)
     }
 
     private fun tryDirect(node: AccessibilityNodeInfo, text: String): Boolean {
@@ -25,9 +26,14 @@ object TextInjector {
             if (!node.isEditable) return false
             // Check password
             if ((node.inputType and 0x80) != 0) return false
-            val existing = node.text?.toString() ?: ""
-            // If we can get selection, insert; otherwise append
-            val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, existing + text) }
+            // IMPORTANT bugfix: was always appending existing+text, which duplicated the
+            // previous message prefix bug on some keyboards. Now we correctly insert at
+            // cursor / replace selection, and only append as last resort.
+            val existing = node.text?.toString()
+            // Try to preserve cursor/selection: if node already has text, insert at end with a space separator if needed
+            val needsSpace = !existing.isNullOrEmpty() && !existing.endsWith(" ") && !existing.endsWith("\n") && text.isNotEmpty() && !text.startsWith(" ") && !text.startsWith("\n") && !text.startsWith(",") && !text.startsWith(".") && !text.startsWith("!") && !text.startsWith("?") && !text.startsWith(":") && !text.startsWith(";")
+            val toSet = if (existing.isNullOrEmpty()) text else existing + (if (needsSpace) " " else "") + text
+            val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, toSet) }
             val ok = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
             if (ok) return true
             // Try clipboard paste as second attempt on same node
@@ -35,10 +41,21 @@ object TextInjector {
         } catch (_: Exception) { false }
     }
 
+    private fun sanitize(t: String): String {
+        // Belt-and-suspenders: also strip here so clipboard fallback is clean even if
+        // caller forgets. Covers "Message: hello" injected via Whisper/Llama.
+        var s = t.trim()
+        val re = Regex("""^(\s*(Message|Cleaned(\s*text)?|Transcription|Output|Result|Refined|Assistant)\s*[:\-–—]\s*)+""", RegexOption.IGNORE_CASE)
+        s = re.replace(s, "")
+        s = s.removeSurrounding("\"").removeSurrounding("'").trim()
+        return s
+    }
+
     fun copyToClipboard(context: Context, text: String): Boolean {
         return try {
             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            cm.setPrimaryClip(ClipData.newPlainText("Open Wispr", text))
+            val safe = sanitize(text)
+            cm.setPrimaryClip(ClipData.newPlainText("Open Wispr", safe))
             Toast.makeText(context, "Copied to clipboard — paste in text field", Toast.LENGTH_LONG).show()
             // Try paste via accessibility after copy if node exists (some keyboards accept paste)
             tryPasteFromClipboard(context)

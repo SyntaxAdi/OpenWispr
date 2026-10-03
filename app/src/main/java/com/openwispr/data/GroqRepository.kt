@@ -56,7 +56,8 @@ class GroqRepository {
             c.disconnect()
             if (code in 200..299) {
                 val text = try { JSONObject(body).optString("text", "") } catch (_: Exception) { "" }
-                if (text.isBlank()) GroqResult.Error("Empty transcription") else GroqResult.Success(text)
+                val sanitized = Constants.sanitizeOutput(text)
+                if (sanitized.isBlank()) GroqResult.Error("Empty transcription") else GroqResult.Success(sanitized)
             } else GroqResult.Error("Transcribe HTTP $code: ${extractErr(body)}")
         } catch (e: Exception) { GroqResult.Error(e.message ?: "Transcribe failed") }
     }
@@ -85,11 +86,12 @@ class GroqRepository {
             val body = readBody(c)
             c.disconnect()
             if (code in 200..299) {
-                val clean = try {
+                val cleanRaw = try {
                     JSONObject(body).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content").trim()
                 } catch (_: Exception) { "" }
-                // fallback to raw if empty
-                GroqResult.Success(if (clean.isBlank()) rawText else clean)
+                val clean = Constants.sanitizeOutput(cleanRaw)
+                // fallback to sanitized raw if LLM returned empty/prefix-only
+                GroqResult.Success(if (clean.isBlank()) Constants.sanitizeOutput(rawText) else clean)
             } else GroqResult.Error("Refine HTTP $code: ${extractErr(body)}")
         } catch (e: Exception) { GroqResult.Error(e.message ?: "Refine failed") }
     }

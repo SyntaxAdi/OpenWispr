@@ -12,5 +12,28 @@ object Constants {
     const val MAX_BUBBLE_DP = 100
     const val MIN_REC_SEC = 15
     const val MAX_REC_SEC = 120
-    const val SYSTEM_PROMPT = "You are a speech cleaner. Remove stutters, filler words (uh, um, like, you know, ah, hmm), repetitions, rambling and false starts. Fix grammar and punctuation. Preserve original intent and meaning. Return ONLY the cleaned text, no quotes, no explanation."
+    const val SYSTEM_PROMPT = "You are a speech cleaner. Remove stutters, filler words (uh, um, like, you know, ah, hmm), repetitions, rambling and false starts. Fix grammar and punctuation. Preserve original intent and meaning. Return ONLY the cleaned text, no quotes, no explanation, no prefix like 'Message:', 'Here is the cleaned text:', or similar."
+
+    /** Strip LLM-added prefixes like "Message:", "Cleaned text:" and surrounding quotes. */
+    fun sanitizeOutput(text: String): String {
+        var t = text.trim()
+        // Remove repeated prefixes "Message:", "Cleaned text:", "Transcription:" etc (case-insensitive)
+        val prefixRe = Regex("""^(\s*(Message|Cleaned(\s*text)?|Transcription|Output|Result|Refined)\s*[:\-–—]\s*)+""", RegexOption.IGNORE_CASE)
+        t = prefixRe.replace(t, "")
+        // Remove "Here is the cleaned..." preamble
+        val preambleRe = Regex("""^(Here is|Here's|Sure,?\s*here is) (the )?(cleaned|transcribed|corrected|refined).*?:\s*""", RegexOption.IGNORE_CASE)
+        t = preambleRe.replace(t, "")
+        // Trim surrounding quotes / markdown fences
+        t = t.trim()
+        if (t.startsWith("```")) {
+            t = t.removePrefix("```").removeSuffix("```").trim()
+            // remove optional language tag line
+            if (t.startsWith("text") || t.startsWith("plain")) t = t.substringAfter("\n").trim()
+        }
+        t = t.removeSurrounding("\"").removeSurrounding("'").removeSurrounding("“").removeSurrounding("”").trim()
+        if ((t.startsWith("\"") && t.endsWith("\"") && t.length > 1) || (t.startsWith("'") && t.endsWith("'") && t.length > 1)) {
+            t = t.substring(1, t.length - 1).trim()
+        }
+        return t
+    }
 }
