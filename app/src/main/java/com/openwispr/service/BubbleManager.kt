@@ -104,7 +104,8 @@ class BubbleManager(
             setOnClickListener { cancelRecording() }
         }
         val wave = WaveformView(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(0, dp(36)).apply { weight = 1f; setMargins(6,0,6,0) }
+            // Quarter-size waveform: 48dp wide (was weight=1 ~168dp flex) — true 1/4 length, compact pill
+            layoutParams = LinearLayout.LayoutParams(dp(48), dp(24)).apply { setMargins(4,0,4,0) }
         }
         val tick = ImageView(ctx).apply {
             setImageResource(R.drawable.ic_tick)
@@ -262,7 +263,7 @@ class BubbleManager(
     }
     private fun expand() {
         val p = params ?: return
-        val targetW = dp(280)
+        val targetW = dp(140) // compact: 44(cancel)+48(wave)+44(tick)+~4 margins ≈140dp (was 280dp), true quarter-ish bar
         val startW = p.width
         val startH = p.height
         scope.launch {
