@@ -43,10 +43,13 @@ class BubbleManager(
     private var tickLoader: ProgressBar? = null
     private var tickWrap: FrameLayout? = null
     private var closeIcon: ImageView? = null
+    private var snapAnimator: ValueAnimator? = null
     private var state: State = State.Idle
     private var amplitudeRunnable: Runnable? = null
     private var timeoutRunnable: Runnable? = null
     private var isAttached = false
+    private var isKeyboardOpen = false
+    private var isLayoutUpdatePending = false
 
     enum class State { Idle, Recording, Processing }
 
@@ -54,18 +57,60 @@ class BubbleManager(
 
     private fun dp(v: Int): Int = (v * service.resources.displayMetrics.density).toInt()
 
-    fun showCollapsed() {
-        if (isAttached && state == State.Idle) return
+    fun onKeyboardOpened(uncoveredHeight: Int) {
+        if (!isKeyboardOpen || !isAttached) {
+            isKeyboardOpen = true
+            showAtKeyboardCenter(uncoveredHeight)
+        }
+    }
+
+    fun onKeyboardClosed() {
+        isKeyboardOpen = false
+        if (isRecording()) {
+            // Keep recording uninterrupted even if keyboard minimizes
+            return
+        }
+        hide()
+    }
+
+    private fun showAtKeyboardCenter(uncoveredHeight: Int) {
         if (state != State.Idle) return
-        if (isAttached) { showCollapsedInternal(); return }
-        createView()
+        val dm = service.resources.displayMetrics
+        val sizePx = dp(settings.bubbleDp)
+        val centerY = (uncoveredHeight / 2) - (sizePx / 2)
+        val targetY = centerY.coerceIn(dp(24), (uncoveredHeight - sizePx - dp(8)).coerceAtLeast(dp(24)))
+        val targetX = (dm.widthPixels - sizePx - dp(8)).coerceAtLeast(0)
+
+        if (bubbleView == null) {
+            createView()
+        }
+
+        params?.let { p ->
+            p.x = targetX
+            p.y = targetY
+            p.width = sizePx
+            p.height = sizePx
+        }
+
         showCollapsedInternal()
-        try { wm.addView(bubbleView, params); isAttached = true } catch (_: Exception) {}
+
+        if (!isAttached) {
+            try {
+                wm.addView(bubbleView, params)
+                isAttached = true
+            } catch (_: Exception) {}
+        } else {
+            try {
+                wm.updateViewLayout(bubbleView, params)
+            } catch (_: Exception) {}
+        }
     }
 
     fun hide() {
         if (state != State.Idle) return
         if (!isAttached) return
+        snapAnimator?.cancel()
+        snapAnimator = null
         try { wm.removeView(bubbleView) } catch (_: Exception) {}
         isAttached = false
     }
@@ -73,6 +118,8 @@ class BubbleManager(
     fun destroy() {
         handler.removeCallbacksAndMessages(null)
         scope.cancel()
+        snapAnimator?.cancel()
+        snapAnimator = null
         if (isAttached) try { wm.removeView(bubbleView) } catch (_: Exception) {}
         isAttached = false
     }
@@ -177,13 +224,15 @@ class BubbleManager(
         var initialTouchY = 0f
         var moved = false
         var downTime = 0L
-        val touchSlop = dp(8)
-        val touchListener = View.OnTouchListener { v, ev ->
+        val touchSlop = ViewConfiguration.get(ctx).scaledTouchSlop
+
+        val touchListener = View.OnTouchListener { _, ev ->
             if (state != State.Idle) return@OnTouchListener false
-            val p = params
-            when (ev.action) {
+            val p = params ?: return@OnTouchListener false
+            when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    if (p == null) return@OnTouchListener false
+                    snapAnimator?.cancel()
+                    snapAnimator = null
                     initialX = p.x
                     initialY = p.y
                     initialTouchX = ev.rawX
@@ -193,85 +242,84 @@ class BubbleManager(
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    if (p == null) return@OnTouchListener true
                     val dx = (ev.rawX - initialTouchX).toInt()
                     val dy = (ev.rawY - initialTouchY).toInt()
-                    if (!moved && (abs(dx) > touchSlop || abs(dy) > touchSlop)) moved = true
+                    if (!moved && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                        moved = true
+                    }
                     if (moved) {
                         val dm = service.resources.displayMetrics
                         val w = p.width
                         val h = p.height
-                        var nx = initialX + dx
-                        var ny = initialY + dy
-                        nx = nx.coerceIn(0, (dm.widthPixels - w).coerceAtLeast(0))
-                        ny = ny.coerceIn(0, (dm.heightPixels - h - dp(24)).coerceAtLeast(0))
+                        val nx = (initialX + dx).coerceIn(0, (dm.widthPixels - w).coerceAtLeast(0))
+                        val ny = (initialY + dy).coerceIn(dp(16), (dm.heightPixels - h - dp(16)).coerceAtLeast(0))
                         p.x = nx
                         p.y = ny
-                        try { wm.updateViewLayout(bubbleView, p) } catch (_: Exception) {}
+                        if (!isLayoutUpdatePending) {
+                            isLayoutUpdatePending = true
+                            bubbleView?.postOnAnimation {
+                                isLayoutUpdatePending = false
+                                if (isAttached) {
+                                    try { wm.updateViewLayout(bubbleView, p) } catch (_: Exception) {}
+                                }
+                            }
+                        }
                     }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
                     if (moved) {
-                        val curP = params ?: return@OnTouchListener true
                         val dm = service.resources.displayMetrics
                         val margin = dp(8)
                         val mid = dm.widthPixels / 2
-                        val targetX = if (curP.x + curP.width / 2 < mid) margin else dm.widthPixels - curP.width - margin
-                        val startX = curP.x
-                        val finalY = curP.y
+                        val targetX = if (p.x + p.width / 2 < mid) margin else dm.widthPixels - p.width - margin
+                        val startX = p.x
+                        val finalY = p.y
                         if (startX != targetX) {
-                            val anim = ValueAnimator.ofInt(startX, targetX).apply {
+                            snapAnimator = ValueAnimator.ofInt(startX, targetX).apply {
                                 duration = 180
                                 interpolator = DecelerateInterpolator()
                                 addUpdateListener { a ->
-                                    curP.x = a.animatedValue as Int
-                                    try { wm.updateViewLayout(bubbleView, curP) } catch (_: Exception) {}
+                                    p.x = a.animatedValue as Int
+                                    try { wm.updateViewLayout(bubbleView, p) } catch (_: Exception) {}
                                 }
                             }
-                            anim.start()
+                            snapAnimator?.start()
                         }
                         settings.setBubblePos(targetX, finalY)
-                        v?.performClick()
-                        true
                     } else {
-                        if (System.currentTimeMillis() - downTime < 800) {
-                            v?.performClick()
+                        if (System.currentTimeMillis() - downTime < 600) {
                             startRecording()
                         }
-                        true
                     }
+                    true
                 }
-                MotionEvent.ACTION_CANCEL -> { moved = false; true }
+                MotionEvent.ACTION_CANCEL -> {
+                    moved = false
+                    isLayoutUpdatePending = false
+                    true
+                }
                 else -> false
             }
         }
-        container.setOnTouchListener(touchListener)
-        mic.setOnTouchListener(touchListener)
+
         outer.setOnTouchListener(touchListener)
-        container.isClickable = true
-        mic.isClickable = true
-        outer.isClickable = true
         bubbleView = outer
 
         val dm = service.resources.displayMetrics
-        val defaultX = if (settings.bubbleX != Int.MIN_VALUE) {
-            settings.bubbleX.coerceIn(0, (dm.widthPixels - sizePx).coerceAtLeast(0))
-        } else {
-            (dm.widthPixels - sizePx - dp(24)).coerceAtLeast(dp(8))
-        }
-        val defaultY = if (settings.bubbleY != Int.MIN_VALUE) {
-            settings.bubbleY.coerceIn(0, (dm.heightPixels - sizePx).coerceAtLeast(0))
-        } else {
-            (dm.heightPixels - sizePx - dp(220) - dp(48)).coerceAtLeast(dp(100))
-        }
+        val defaultX = (dm.widthPixels - sizePx - dp(8)).coerceAtLeast(0)
+        val defaultY = (dm.heightPixels / 2 - sizePx / 2).coerceAtLeast(dp(24))
 
         params = WindowManager.LayoutParams(
             sizePx, sizePx,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.TOP or Gravity.START; x = defaultX; y = defaultY }
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = defaultX
+            y = defaultY
+        }
     }
 
     private fun showCollapsedInternal() {
@@ -283,7 +331,6 @@ class BubbleManager(
         tickLoader?.apply { visibility = View.GONE; clearAnimation() }
         tickWrap?.apply { isEnabled = true; alpha = 1f; isClickable = true }
         closeIcon?.apply { isEnabled = true; alpha = 1f; isClickable = true }
-        try { bubbleView?.let { v -> params?.let { p -> wm.updateViewLayout(v, p) } } } catch (_: Exception) {}
         val sizePx = dp(settings.bubbleDp)
         params?.let { p ->
             p.width = sizePx
@@ -348,8 +395,7 @@ class BubbleManager(
         waveform?.setIdle()
         state = State.Idle
         service.stopListeningNotification()
-        showCollapsedInternal()
-        service.requestHideCheck()
+        hide()
     }
 
     private fun finishRecording() {
@@ -368,7 +414,6 @@ class BubbleManager(
         tickWrap?.apply { isEnabled = false; alpha = 0.9f; isClickable = false; invalidate() }
         closeIcon?.apply { isEnabled = false; alpha = 0.35f; isClickable = false }
         try { bubbleView?.let { v -> params?.let { p -> wm.updateViewLayout(v, p) } } } catch (_: Exception) {}
-        handler.post { try { bubbleView?.invalidate(); tickLoader?.invalidate() } catch (_: Exception) {} }
         val file = recorder.stop()
         waveform?.setIdle()
         statusText?.apply { text = "Transcribing..."; visibility = View.VISIBLE }
@@ -377,8 +422,13 @@ class BubbleManager(
             tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
             tickLoader?.visibility = View.GONE
             closeIcon?.apply { isEnabled = true; alpha = 1f; isClickable = true }
-            handler.postDelayed({ state = State.Idle; service.stopListeningNotification(); showCollapsedInternal(); service.requestHideCheck() }, 1200)
-            file?.delete(); return
+            handler.postDelayed({
+                state = State.Idle
+                service.stopListeningNotification()
+                hide()
+            }, 1000)
+            file?.delete()
+            return
         }
         scope.launch {
             val apiKey = settings.apiKey
@@ -391,9 +441,14 @@ class BubbleManager(
                     tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
                     tickLoader?.visibility = View.GONE
                     closeIcon?.apply { isEnabled = true; alpha = 1f; isClickable = true }
-                    handler.postDelayed({ state = State.Idle; service.stopListeningNotification(); showCollapsedInternal() }, 1600)
+                    handler.postDelayed({
+                        state = State.Idle
+                        service.stopListeningNotification()
+                        hide()
+                    }, 1400)
                 }
-                file.delete(); return@launch
+                file.delete()
+                return@launch
             }
             when (val tr = groq.transcribe(baseUrl, apiKey, whisper, file)) {
                 is GroqResult.Error -> withContext(Dispatchers.Main) {
@@ -401,7 +456,11 @@ class BubbleManager(
                     tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
                     tickLoader?.visibility = View.GONE
                     closeIcon?.apply { isEnabled = true; alpha = 1f; isClickable = true }
-                    handler.postDelayed({ state = State.Idle; service.stopListeningNotification(); showCollapsedInternal(); service.requestHideCheck() }, 1800)
+                    handler.postDelayed({
+                        state = State.Idle
+                        service.stopListeningNotification()
+                        hide()
+                    }, 1500)
                 }
                 is GroqResult.Success -> {
                     val raw = tr.data
@@ -412,7 +471,11 @@ class BubbleManager(
                             statusText?.text = if (injected) "Pasted ✓" else "Copied"
                             tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
                             tickLoader?.visibility = View.GONE
-                            handler.postDelayed({ state = State.Idle; service.stopListeningNotification(); showCollapsedInternal(); service.requestHideCheck() }, 1000)
+                            handler.postDelayed({
+                                state = State.Idle
+                                service.stopListeningNotification()
+                                hide()
+                            }, 800)
                         }
                         is GroqResult.Success -> withContext(Dispatchers.Main) {
                             val clean = rf.data
@@ -420,7 +483,11 @@ class BubbleManager(
                             statusText?.text = if (injected) "Pasted ✓" else "Copied"
                             tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
                             tickLoader?.visibility = View.GONE
-                            handler.postDelayed({ state = State.Idle; service.stopListeningNotification(); showCollapsedInternal(); service.requestHideCheck() }, 900)
+                            handler.postDelayed({
+                                state = State.Idle
+                                service.stopListeningNotification()
+                                hide()
+                            }, 800)
                         }
                     }
                 }

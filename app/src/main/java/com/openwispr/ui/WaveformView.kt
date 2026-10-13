@@ -20,6 +20,7 @@ class WaveformView @JvmOverloads constructor(c: Context, attrs: AttributeSet? = 
         // smooth lerp
         level = level * 0.7f + amplitude01.coerceIn(0f, 1f) * 0.3f
         phase += 0.22f
+        animating = true
         invalidate()
     }
 
@@ -49,6 +50,6 @@ class WaveformView @JvmOverloads constructor(c: Context, attrs: AttributeSet? = 
         }
     }
 
-    override fun onAttachedToWindow() { super.onAttachedToWindow(); animating = true }
+    override fun onAttachedToWindow() { super.onAttachedToWindow() }
     override fun onDetachedFromWindow() { super.onDetachedFromWindow(); animating = false }
 }
