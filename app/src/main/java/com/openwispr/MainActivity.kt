@@ -47,9 +47,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onResume() { super.onResume(); triggerRecompose() }
-    private fun triggerRecompose() { /* recompose via state read in screen */ }
-
     private fun hasMicPermission() = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     private fun hasNotifPermission(): Boolean {
         if (Build.VERSION.SDK_INT < 33) return true

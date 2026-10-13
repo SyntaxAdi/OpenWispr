@@ -8,8 +8,6 @@ class AudioRecorder(private val context: Context) {
     private var recorder: MediaRecorder? = null
     private var outFile: File? = null
 
-    fun isRecording() = recorder != null
-
     fun start(): File? {
         try {
             val f = File(context.cacheDir, "wispr_${System.currentTimeMillis()}.m4a")

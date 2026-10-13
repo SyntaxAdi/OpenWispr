@@ -19,9 +19,9 @@ import com.openwispr.data.GroqRepository
 import com.openwispr.data.GroqResult
 import com.openwispr.data.SettingsRepository
 import com.openwispr.ui.WaveformView
+import com.openwispr.util.Constants
 import com.openwispr.util.TextInjector
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.first
 import kotlin.math.abs
 
 class BubbleManager(
@@ -39,7 +39,6 @@ class BubbleManager(
     private var expandedGroup: View? = null
     private var waveform: WaveformView? = null
     private var statusText: TextView? = null
-    private var progress: ProgressBar? = null
     private var tickIcon: ImageView? = null
     private var tickLoader: ProgressBar? = null
     private var tickWrap: FrameLayout? = null
@@ -48,10 +47,13 @@ class BubbleManager(
     private var amplitudeRunnable: Runnable? = null
     private var timeoutRunnable: Runnable? = null
     private var isAttached = false
+
     enum class State { Idle, Recording, Processing }
+
     fun isRecording() = state == State.Recording || state == State.Processing
-    fun isShowing() = isAttached
+
     private fun dp(v: Int): Int = (v * service.resources.displayMetrics.density).toInt()
+
     fun showCollapsed() {
         if (isAttached && state == State.Idle) return
         if (state != State.Idle) return
@@ -60,65 +62,59 @@ class BubbleManager(
         showCollapsedInternal()
         try { wm.addView(bubbleView, params); isAttached = true } catch (_: Exception) {}
     }
+
     fun hide() {
         if (state != State.Idle) return
         if (!isAttached) return
         try { wm.removeView(bubbleView) } catch (_: Exception) {}
         isAttached = false
     }
+
     fun destroy() {
         handler.removeCallbacksAndMessages(null)
         scope.cancel()
         if (isAttached) try { wm.removeView(bubbleView) } catch (_: Exception) {}
         isAttached = false
     }
+
     private fun createView() {
         val ctx = service
-        val sizePx = dp(56)
+        val sizePx = dp(settings.bubbleDp)
         val container = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER
+            gravity = Gravity.CENTER
             background = null
             clipToOutline = false
             elevation = 8f
         }
-        val collapsed = LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER
-            setPadding(0,0,0,0)
-        }
         val mic = ImageView(ctx).apply {
             setImageResource(R.drawable.ic_bubble)
-            // Bubble artwork has built-in circular padding; fill collapsed container edge-to-edge for no square halo
             scaleType = ImageView.ScaleType.CENTER_CROP
             layoutParams = LinearLayout.LayoutParams(sizePx, sizePx)
             clipToOutline = true
             elevation = 0f
         }
-        collapsed.addView(mic)
         val expanded = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER
+            gravity = Gravity.CENTER
             visibility = View.GONE
-            setPadding(6,6,6,6)
+            setPadding(6, 6, 6, 6)
         }
         val close = ImageView(ctx).apply {
             setImageResource(R.drawable.ic_close)
-            setPadding(10,10,10,10)
-            layoutParams = LinearLayout.LayoutParams(dp(44),dp(44))
+            setPadding(10, 10, 10, 10)
+            layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
             setOnClickListener { cancelRecording() }
         }
         val wave = WaveformView(ctx).apply {
-            // Quarter-size waveform: 48dp wide (was weight=1 ~168dp flex) — true 1/4 length, compact pill
-            layoutParams = LinearLayout.LayoutParams(dp(48), dp(24)).apply { setMargins(4,0,4,0) }
+            layoutParams = LinearLayout.LayoutParams(dp(48), dp(24)).apply { setMargins(4, 0, 4, 0) }
         }
-        // Tick + inline loader: tapping ✓ swaps to spinner so user knows submit succeeded; restores on collapse
         val tickHolder = FrameLayout(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
         }
         val tick = ImageView(ctx).apply {
             setImageResource(R.drawable.ic_tick)
-            setPadding(10,10,10,10)
+            setPadding(10, 10, 10, 10)
             layoutParams = FrameLayout.LayoutParams(dp(44), dp(44), Gravity.CENTER)
             isClickable = true
             isFocusable = true
@@ -127,7 +123,6 @@ class BubbleManager(
             isIndeterminate = true
             visibility = View.GONE
             layoutParams = FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER)
-            // tint to white so visible on expanded pill (#2A2A3A)
             indeterminateTintList = android.content.res.ColorStateList.valueOf(0xFFFFFFFF.toInt())
             indeterminateTintMode = android.graphics.PorterDuff.Mode.SRC_IN
             isDuplicateParentStateEnabled = false
@@ -137,9 +132,7 @@ class BubbleManager(
         tickHolder.isClickable = true
         tickHolder.isFocusable = true
         val tickClick = View.OnClickListener {
-            // guard: single tap -> immediate visual feedback, ignore double taps
             if (state != State.Recording) return@OnClickListener
-            // swap immediately on main thread before any blocking work
             tick.visibility = View.GONE
             tickSpin.visibility = View.VISIBLE
             tickSpin.bringToFront()
@@ -149,7 +142,6 @@ class BubbleManager(
             tickHolder.alpha = 0.9f
             closeIcon?.let { it.isEnabled = false; it.alpha = 0.35f; it.isClickable = false }
             tickHolder.invalidate()
-            // force overlay window to redraw (TYPE_ACCESSIBILITY_OVERLAY can cache)
             try { bubbleView?.let { v -> wm.updateViewLayout(v, params) } } catch (_: Exception) {}
             finishRecording()
         }
@@ -157,22 +149,20 @@ class BubbleManager(
         tickHolder.setOnClickListener(tickClick)
         val status = TextView(ctx).apply {
             text = ""; textSize = 11f; setTextColor(0xCCFFFFFF.toInt()); visibility = View.GONE
-            setPadding(8,0,8,0)
+            setPadding(8, 0, 8, 0)
         }
-        val prog = ProgressBar(ctx).apply { visibility = View.GONE; isIndeterminate = true }
         expanded.addView(close)
         expanded.addView(wave)
         expanded.addView(tickHolder)
-        container.addView(collapsed)
+        container.addView(mic)
         container.addView(expanded)
         val outer = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = android.view.Gravity.CENTER
+            gravity = Gravity.CENTER
             addView(container)
             addView(status)
-            addView(prog)
         }
-        collapsedGroup = collapsed
+        collapsedGroup = mic
         expandedGroup = expanded
         waveform = wave
         tickIcon = tick
@@ -180,8 +170,7 @@ class BubbleManager(
         tickWrap = tickHolder
         closeIcon = close
         statusText = status
-        progress = prog
-        // --- Draggable bubble: tap vs drag, TOP|START gravity, persisted position, snap to edge ---
+
         var initialX = 0
         var initialY = 0
         var initialTouchX = 0f
@@ -242,10 +231,7 @@ class BubbleManager(
                             }
                             anim.start()
                         }
-                        scope.launch {
-                            kotlinx.coroutines.delay(220)
-                            try { settings.setBubblePos(targetX, finalY) } catch (_: Exception) {}
-                        }
+                        settings.setBubblePos(targetX, finalY)
                         v?.performClick()
                         true
                     } else {
@@ -261,83 +247,74 @@ class BubbleManager(
             }
         }
         container.setOnTouchListener(touchListener)
-        collapsed.setOnTouchListener(touchListener)
         mic.setOnTouchListener(touchListener)
         outer.setOnTouchListener(touchListener)
         container.isClickable = true
-        collapsed.isClickable = true
+        mic.isClickable = true
         outer.isClickable = true
         bubbleView = outer
+
         val dm = service.resources.displayMetrics
-        val defaultX = (dm.widthPixels - sizePx - dp(24)).coerceAtLeast(dp(8))
-        val defaultY = (dm.heightPixels - sizePx - dp(220) - dp(48)).coerceAtLeast(dp(100))
+        val defaultX = if (settings.bubbleX != Int.MIN_VALUE) {
+            settings.bubbleX.coerceIn(0, (dm.widthPixels - sizePx).coerceAtLeast(0))
+        } else {
+            (dm.widthPixels - sizePx - dp(24)).coerceAtLeast(dp(8))
+        }
+        val defaultY = if (settings.bubbleY != Int.MIN_VALUE) {
+            settings.bubbleY.coerceIn(0, (dm.heightPixels - sizePx).coerceAtLeast(0))
+        } else {
+            (dm.heightPixels - sizePx - dp(220) - dp(48)).coerceAtLeast(dp(100))
+        }
+
         params = WindowManager.LayoutParams(
             sizePx, sizePx,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.TOP or Gravity.START; x = defaultX; y = defaultY }
-        scope.launch {
-            try {
-                val sx = settings.bubbleXFlow.first()
-                val sy = settings.bubbleYFlow.first()
-                if (sx != Int.MIN_VALUE && sy != Int.MIN_VALUE) {
-                    handler.post {
-                        params?.let { p ->
-                            p.x = sx.coerceIn(0, (dm.widthPixels - p.width).coerceAtLeast(0))
-                            p.y = sy.coerceIn(0, (dm.heightPixels - p.height).coerceAtLeast(0))
-                            if (isAttached) try { wm.updateViewLayout(bubbleView, p) } catch (_: Exception) {}
-                        }
-                    }
-                }
-            } catch (_: Exception) {}
-        }
     }
+
     private fun showCollapsedInternal() {
         collapsedGroup?.visibility = View.VISIBLE
         expandedGroup?.visibility = View.GONE
         statusText?.visibility = View.GONE
-        progress?.visibility = View.GONE
         bubbleView?.background = null
-        // restore tick: hide loader, show check, re-enable both icons
         tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f; isEnabled = true; isClickable = true }
         tickLoader?.apply { visibility = View.GONE; clearAnimation() }
         tickWrap?.apply { isEnabled = true; alpha = 1f; isClickable = true }
         closeIcon?.apply { isEnabled = true; alpha = 1f; isClickable = true }
-        // ensure overlay redraw reflects restored tick
         try { bubbleView?.let { v -> params?.let { p -> wm.updateViewLayout(v, p) } } } catch (_: Exception) {}
-        scope.launch {
-            val dpVal = settings.bubbleDpFlow.first()
-            handler.post {
-                params?.let { p -> p.width = dp(dpVal); p.height = dp(dpVal); if (isAttached) try { wm.updateViewLayout(bubbleView, p) } catch (_: Exception) {} }
-            }
+        val sizePx = dp(settings.bubbleDp)
+        params?.let { p ->
+            p.width = sizePx
+            p.height = sizePx
+            if (isAttached) try { wm.updateViewLayout(bubbleView, p) } catch (_: Exception) {}
         }
         (bubbleView as? ViewGroup)?.getChildAt(0)?.background = null
     }
+
     private fun expand() {
         val p = params ?: return
-        val targetW = dp(140) // compact: 44(cancel)+48(wave)+44(tick)+~4 margins ≈140dp (was 280dp), true quarter-ish bar
+        val targetW = dp(140)
         val startW = p.width
         val startH = p.height
-        scope.launch {
-            val actualH = dp(settings.bubbleDpFlow.first())
-            handler.post {
-                val anim = ValueAnimator.ofFloat(0f, 1f).apply {
-                    duration = 220; interpolator = DecelerateInterpolator()
-                    addUpdateListener {
-                        val f = it.animatedValue as Float
-                        p.width = (startW + (targetW - startW) * f).toInt()
-                        p.height = (startH + (actualH - startH) * f).toInt()
-                        try { wm.updateViewLayout(bubbleView, p) } catch (_: Exception) {}
-                    }
-                }
-                anim.start()
+        val actualH = dp(settings.bubbleDp)
+        val anim = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 220
+            interpolator = DecelerateInterpolator()
+            addUpdateListener {
+                val f = it.animatedValue as Float
+                p.width = (startW + (targetW - startW) * f).toInt()
+                p.height = (startH + (actualH - startH) * f).toInt()
+                try { wm.updateViewLayout(bubbleView, p) } catch (_: Exception) {}
             }
         }
+        anim.start()
         collapsedGroup?.visibility = View.GONE
         expandedGroup?.visibility = View.VISIBLE
         (bubbleView as? ViewGroup)?.getChildAt(0)?.background = service.getDrawable(R.drawable.bg_expanded)
     }
+
     private fun startRecording() {
         if (state != State.Idle) return
         val file = recorder.start()
@@ -346,13 +323,11 @@ class BubbleManager(
         expand()
         if (!isAttached) { try { wm.addView(bubbleView, params); isAttached = true } catch (_: Exception) {} }
         startAmplitudeLoop()
-        scope.launch {
-            val maxSec = settings.maxSecFlow.first()
-            timeoutRunnable = Runnable { if (state == State.Recording) finishRecording() }
-            handler.postDelayed(timeoutRunnable!!, maxSec * 1000L)
-        }
+        timeoutRunnable = Runnable { if (state == State.Recording) finishRecording() }
+        handler.postDelayed(timeoutRunnable!!, settings.maxSec * 1000L)
         service.startListeningNotification()
     }
+
     private fun startAmplitudeLoop() {
         amplitudeRunnable = object : Runnable {
             override fun run() {
@@ -365,6 +340,7 @@ class BubbleManager(
         }
         handler.post(amplitudeRunnable!!)
     }
+
     private fun cancelRecording() {
         timeoutRunnable?.let { handler.removeCallbacks(it) }
         amplitudeRunnable?.let { handler.removeCallbacks(it) }
@@ -375,31 +351,27 @@ class BubbleManager(
         showCollapsedInternal()
         service.requestHideCheck()
     }
+
     private fun finishRecording() {
         if (state != State.Recording) return
         state = State.Processing
         timeoutRunnable?.let { handler.removeCallbacks(it) }
         amplitudeRunnable?.let { handler.removeCallbacks(it) }
-        // Guaranteed tick→spinner swap: handles both tap (already swapped in click listener) and auto-timeout path.
-        // Use GONE (not INVISIBLE) so spinner is the only drawable in the FrameLayout and gets full draw priority.
         tickIcon?.visibility = View.GONE
         tickLoader?.apply {
             visibility = View.VISIBLE
             bringToFront()
-            // restart indeterminate animation (required after GONE→VISIBLE on overlay windows)
             indeterminateDrawable?.setVisible(true, true)
             isIndeterminate = true
             invalidate()
         }
         tickWrap?.apply { isEnabled = false; alpha = 0.9f; isClickable = false; invalidate() }
         closeIcon?.apply { isEnabled = false; alpha = 0.35f; isClickable = false }
-        // Force overlay window composite to reflect swap immediately - recorder.stop() blocks ~100ms
         try { bubbleView?.let { v -> params?.let { p -> wm.updateViewLayout(v, p) } } } catch (_: Exception) {}
         handler.post { try { bubbleView?.invalidate(); tickLoader?.invalidate() } catch (_: Exception) {} }
         val file = recorder.stop()
         waveform?.setIdle()
         statusText?.apply { text = "Transcribing..."; visibility = View.VISIBLE }
-        progress?.visibility = View.GONE // status text is the main indicator; per-tick spinner is the tick action loader
         if (file == null || !file.exists() || file.length() < 800) {
             statusText?.text = "No audio"
             tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
@@ -409,10 +381,10 @@ class BubbleManager(
             file?.delete(); return
         }
         scope.launch {
-            val apiKey = settings.apiKeyFlow.first()
-            val baseUrl = settings.baseUrlFlow.first()
-            val whisper = settings.whisperFlow.first()
-            val llama = settings.llamaFlow.first()
+            val apiKey = settings.apiKey
+            val baseUrl = settings.baseUrl
+            val whisper = settings.whisper
+            val llama = settings.llama
             if (apiKey.isBlank()) {
                 withContext(Dispatchers.Main) {
                     statusText?.text = "Set API key in Settings"
@@ -435,7 +407,7 @@ class BubbleManager(
                     val raw = tr.data
                     when (val rf = groq.refine(baseUrl, apiKey, llama, raw)) {
                         is GroqResult.Error -> withContext(Dispatchers.Main) {
-                            val safeRaw = com.openwispr.util.Constants.sanitizeOutput(raw)
+                            val safeRaw = Constants.sanitizeOutput(raw)
                             val injected = TextInjector.inject(service, safeRaw)
                             statusText?.text = if (injected) "Pasted ✓" else "Copied"
                             tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
@@ -454,13 +426,6 @@ class BubbleManager(
                 }
             }
             file.delete()
-        }
-    }
-    fun onBubbleSizeChanged() {
-        if (!isAttached) return
-        scope.launch {
-            val dpVal = settings.bubbleDpFlow.first()
-            handler.post { params?.width = dp(dpVal); params?.height = dp(dpVal); if (state == State.Idle) try { wm.updateViewLayout(bubbleView, params) } catch (_: Exception) {} }
         }
     }
 }

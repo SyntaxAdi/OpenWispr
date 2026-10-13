@@ -41,10 +41,5 @@
                 android:resource="@xml/accessibility_service" />
         </service>
 
-        <service
-            android:name=".service.RecordingForegroundService"
-            android:exported="false"
-            android:foregroundServiceType="microphone" />
-
     </application>
 </manifest>

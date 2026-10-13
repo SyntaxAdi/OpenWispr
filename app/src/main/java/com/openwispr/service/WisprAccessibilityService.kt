@@ -17,7 +17,6 @@ class WisprAccessibilityService : AccessibilityService() {
 
     private lateinit var settings: SettingsRepository
     private lateinit var bubble: BubbleManager
-    private var lastFocusedPackage: String? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -37,7 +36,6 @@ class WisprAccessibilityService : AccessibilityService() {
         ) {
             val node = event.source ?: rootInActiveWindow
             if (isEditableFocused(node)) {
-                lastFocusedPackage = event.packageName?.toString()
                 bubble.showCollapsed()
             } else {
                 // double-check with tree search, debounce small delay
@@ -113,18 +111,6 @@ class WisprAccessibilityService : AccessibilityService() {
     }
 
     fun stopListeningNotification() {
-        try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {
-            try { stopForeground(true) } catch (_: Exception) {}
-        }
-    }
-
-    fun notifyCopiedFallback() {
-        val notif = NotificationCompat.Builder(this, "wispr_rec")
-            .setSmallIcon(R.drawable.ic_mic)
-            .setContentTitle("Open Wispr")
-            .setContentText(getString(R.string.notif_copied))
-            .setAutoCancel(true)
-            .build()
-        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(2, notif)
+        try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
     }
 }

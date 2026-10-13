@@ -5,7 +5,7 @@ object Constants {
     const val DEFAULT_WHISPER = "whisper-large-v3-turbo"
     const val DEFAULT_LLAMA = "llama-3.1-8b-instant"
     val WHISPER_MODELS = listOf("whisper-large-v3-turbo", "whisper-large-v3")
-    val LLAMA_MODELS = listOf("llama-3.1-8b-instant", "llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-8b-instant")
+    val LLAMA_MODELS = listOf("llama-3.1-8b-instant", "llama-3.3-70b-versatile", "llama-3.1-70b-versatile")
     const val DEFAULT_BUBBLE_DP = 56
     const val DEFAULT_MAX_SEC = 60
     const val MIN_BUBBLE_DP = 40
@@ -30,10 +30,6 @@ object Constants {
             // remove optional language tag line
             if (t.startsWith("text") || t.startsWith("plain")) t = t.substringAfter("\n").trim()
         }
-        t = t.removeSurrounding("\"").removeSurrounding("'").removeSurrounding("“").removeSurrounding("”").trim()
-        if ((t.startsWith("\"") && t.endsWith("\"") && t.length > 1) || (t.startsWith("'") && t.endsWith("'") && t.length > 1)) {
-            t = t.substring(1, t.length - 1).trim()
-        }
-        return t
+        return t.removeSurrounding("\"").removeSurrounding("'").removeSurrounding("“").removeSurrounding("”").trim()
     }
 }

@@ -5,7 +5,6 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
-import kotlin.math.abs
 import kotlin.random.Random
 
 class WaveformView @JvmOverloads constructor(c: Context, attrs: AttributeSet? = null) : View(c, attrs) {
@@ -30,7 +29,6 @@ class WaveformView @JvmOverloads constructor(c: Context, attrs: AttributeSet? = 
         super.onDraw(canvas)
         val w = width.toFloat(); val h = height.toFloat()
         if (w == 0f || h == 0f) return
-        val barW = (w / bars * 0.55f)
         val gap = w / bars
         val centerY = h / 2f
         for (i in 0 until bars) {

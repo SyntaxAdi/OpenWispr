@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Open Wispr</string>
-    <string name="settings_title">Open Wispr Settings</string>
-    <string name="cd_bubble">Wispr bubble</string>
     <string name="notif_channel_name">Open Wispr Recording</string>
     <string name="notif_channel_desc">Shows when listening</string>
     <string name="notif_listening">Listening… tap ✓ to finish</string>
-    <string name="notif_copied">Copied to clipboard — focus a text field and paste</string>
 </resources>

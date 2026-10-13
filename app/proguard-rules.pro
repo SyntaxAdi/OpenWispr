@@ -1,4 +1,3 @@
 -keep class com.openwispr.** { *; }
--keep class androidx.datastore.** { *; }
 -dontwarn org.json.**
 -keepattributes *Annotation*

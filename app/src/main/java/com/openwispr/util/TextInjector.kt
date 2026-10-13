@@ -49,11 +49,8 @@ object TextInjector {
 
     private fun getHint(node: AccessibilityNodeInfo): String? {
         return try {
-            if (Build.VERSION.SDK_INT >= 26) {
-                val h = node.hintText?.toString()
-                if (!h.isNullOrBlank()) return h
-            }
-            null
+            val h = node.hintText?.toString()
+            if (!h.isNullOrBlank()) h else null
         } catch (_: Exception) { null }
     }
 
@@ -97,13 +94,7 @@ object TextInjector {
         return text
     }
 
-    private fun sanitize(t: String): String {
-        var s = t.trim()
-        val re = Regex("""^(\s*(Message|Cleaned(\s*text)?|Transcription|Output|Result|Refined|Assistant)\s*[:\-]\s*)+""", RegexOption.IGNORE_CASE)
-        s = re.replace(s, "")
-        s = s.removeSurrounding("\"").removeSurrounding("'").trim()
-        return s
-    }
+    private fun sanitize(t: String): String = Constants.sanitizeOutput(t)
 
     fun copyToClipboard(context: Context, text: String): Boolean {
         return try {
