@@ -31,7 +31,8 @@ fun SettingsScreen(
     isAccessibilityEnabled: () -> Boolean,
     hasMicPermission: () -> Boolean,
     canDrawOverlays: () -> Boolean,
-    hasNotifPermission: () -> Boolean
+    hasNotifPermission: () -> Boolean,
+    onOpenDrawer: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
 
@@ -50,7 +51,18 @@ fun SettingsScreen(
     var showAdvanced by remember { mutableStateOf(false) }
 
     Scaffold(topBar = {
-        TopAppBar(title = { Text("Open Wispr") }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer))
+        TopAppBar(
+            title = { Text("Settings") },
+            navigationIcon = {
+                IconButton(onClick = onOpenDrawer) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_menu),
+                        contentDescription = "Navigation menu"
+                    )
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        )
     }) { pad ->
         Column(
             Modifier.padding(pad).padding(16.dp).verticalScroll(rememberScrollState()).fillMaxSize(),

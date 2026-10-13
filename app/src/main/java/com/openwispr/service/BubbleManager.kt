@@ -17,6 +17,7 @@ import com.openwispr.R
 import com.openwispr.audio.AudioRecorder
 import com.openwispr.data.GroqRepository
 import com.openwispr.data.GroqResult
+import com.openwispr.data.HistoryRepository
 import com.openwispr.data.SettingsRepository
 import com.openwispr.ui.WaveformView
 import com.openwispr.util.Constants
@@ -33,6 +34,8 @@ class BubbleManager(
     private val wm = service.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val handler = Handler(Looper.getMainLooper())
     private var scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val historyRepo = HistoryRepository(service)
+    private var recordingStartTimeMs = 0L
     private var bubbleView: View? = null
     private var params: WindowManager.LayoutParams? = null
     private var collapsedGroup: View? = null
@@ -366,6 +369,7 @@ class BubbleManager(
         if (state != State.Idle) return
         val file = recorder.start()
         if (file == null) { Toast.makeText(service, "Mic permission needed / failed to start", Toast.LENGTH_SHORT).show(); return }
+        recordingStartTimeMs = System.currentTimeMillis()
         state = State.Recording
         expand()
         if (!isAttached) { try { wm.addView(bubbleView, params); isAttached = true } catch (_: Exception) {} }
@@ -430,6 +434,8 @@ class BubbleManager(
             file?.delete()
             return
         }
+        val durationMs = (System.currentTimeMillis() - recordingStartTimeMs).coerceAtLeast(500L)
+        val targetPkg = service.rootInActiveWindow?.packageName?.toString() ?: "unknown"
         scope.launch {
             val apiKey = settings.apiKey
             val baseUrl = settings.baseUrl
@@ -465,29 +471,35 @@ class BubbleManager(
                 is GroqResult.Success -> {
                     val raw = tr.data
                     when (val rf = groq.refine(baseUrl, apiKey, llama, raw)) {
-                        is GroqResult.Error -> withContext(Dispatchers.Main) {
+                        is GroqResult.Error -> {
                             val safeRaw = Constants.sanitizeOutput(raw)
-                            val injected = TextInjector.inject(service, safeRaw)
-                            statusText?.text = if (injected) "Pasted ✓" else "Copied"
-                            tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
-                            tickLoader?.visibility = View.GONE
-                            handler.postDelayed({
-                                state = State.Idle
-                                service.stopListeningNotification()
-                                hide()
-                            }, 800)
+                            historyRepo.insertTranscript(safeRaw, targetPkg, durationMs)
+                            withContext(Dispatchers.Main) {
+                                val injected = TextInjector.inject(service, safeRaw)
+                                statusText?.text = if (injected) "Pasted ✓" else "Copied"
+                                tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
+                                tickLoader?.visibility = View.GONE
+                                handler.postDelayed({
+                                    state = State.Idle
+                                    service.stopListeningNotification()
+                                    hide()
+                                }, 800)
+                            }
                         }
-                        is GroqResult.Success -> withContext(Dispatchers.Main) {
+                        is GroqResult.Success -> {
                             val clean = rf.data
-                            val injected = TextInjector.inject(service, clean)
-                            statusText?.text = if (injected) "Pasted ✓" else "Copied"
-                            tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
-                            tickLoader?.visibility = View.GONE
-                            handler.postDelayed({
-                                state = State.Idle
-                                service.stopListeningNotification()
-                                hide()
-                            }, 800)
+                            historyRepo.insertTranscript(clean, targetPkg, durationMs)
+                            withContext(Dispatchers.Main) {
+                                val injected = TextInjector.inject(service, clean)
+                                statusText?.text = if (injected) "Pasted ✓" else "Copied"
+                                tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
+                                tickLoader?.visibility = View.GONE
+                                handler.postDelayed({
+                                    state = State.Idle
+                                    service.stopListeningNotification()
+                                    hide()
+                                }, 800)
+                            }
                         }
                     }
                 }
