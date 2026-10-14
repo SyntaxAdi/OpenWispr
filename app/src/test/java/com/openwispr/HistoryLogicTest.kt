@@ -144,6 +144,21 @@ class HistoryLogicTest {
         assertEquals(68, pct)
     }
 
+    @Test
+    fun testSplitAppNameForDisplay() {
+        // 1. Short or exact <= 9 chars -> single line with full complete name
+        assertEquals(listOf("Telegram"), com.openwispr.data.HistoryRepository.splitAppNameForDisplay("Telegram", 9))
+        assertEquals(listOf("WhatsApp"), com.openwispr.data.HistoryRepository.splitAppNameForDisplay("WhatsApp", 9))
+        assertEquals(listOf("Chrome"), com.openwispr.data.HistoryRepository.splitAppNameForDisplay("Chrome", 9))
+
+        // 2. Compound long name with spaces -> splits into 2 lines
+        assertEquals(listOf("Google", "Chrome"), com.openwispr.data.HistoryRepository.splitAppNameForDisplay("Google Chrome", 9))
+        assertEquals(listOf("Microsoft", "Teams"), com.openwispr.data.HistoryRepository.splitAppNameForDisplay("Microsoft Teams", 9))
+
+        // 3. Single long word without spaces -> wraps cleanly at maxLineChars across 2 lines
+        assertEquals(listOf("SuperLong", "AppName"), com.openwispr.data.HistoryRepository.splitAppNameForDisplay("SuperLongAppName", 9))
+    }
+
     private fun countWords(text: String): Int {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return 0

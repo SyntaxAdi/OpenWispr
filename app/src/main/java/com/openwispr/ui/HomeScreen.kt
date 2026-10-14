@@ -469,25 +469,37 @@ private fun CardWeekStreak(stats: HomeStats) {
 @Composable
 private fun CardMostUsedApp(stats: HomeStats) {
     val context = LocalContext.current
-    val appIconDrawable = remember(stats.mostUsedAppPackage) {
+    val appBitmap = remember(stats.mostUsedAppPackage) {
         stats.mostUsedAppPackage?.let { pkg ->
-            try {
-                context.packageManager.getApplicationIcon(pkg)
+            if (pkg.isBlank() || pkg == "unknown") return@let null
+            val pm = context.packageManager
+            val drawable = try {
+                pm.getApplicationIcon(pkg)
             } catch (e: Exception) {
-                null
+                try {
+                    val intent = pm.getLaunchIntentForPackage(pkg)
+                    if (intent != null) pm.getActivityIcon(intent) else null
+                } catch (e2: Exception) {
+                    null
+                }
+            }
+            drawable?.let { d ->
+                try {
+                    val sizePx = 96
+                    val bmp = android.graphics.Bitmap.createBitmap(sizePx, sizePx, android.graphics.Bitmap.Config.ARGB_8888)
+                    val canvas = android.graphics.Canvas(bmp)
+                    d.setBounds(0, 0, sizePx, sizePx)
+                    d.draw(canvas)
+                    bmp.asImageBitmap()
+                } catch (e: Exception) {
+                    null
+                }
             }
         }
     }
-    val appBitmap = remember(appIconDrawable) {
-        appIconDrawable?.let { d ->
-            val w = d.intrinsicWidth.coerceAtLeast(1)
-            val h = d.intrinsicHeight.coerceAtLeast(1)
-            val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
-            val canvas = android.graphics.Canvas(bmp)
-            d.setBounds(0, 0, w, h)
-            d.draw(canvas)
-            bmp.asImageBitmap()
-        }
+
+    val nameLines = remember(stats.mostUsedAppName) {
+        com.openwispr.data.HistoryRepository.splitAppNameForDisplay(stats.mostUsedAppName, maxLineChars = 9)
     }
 
     Box(
@@ -520,26 +532,28 @@ private fun CardMostUsedApp(stats: HomeStats) {
                 Row(
                     modifier = Modifier.weight(1f, fill = false),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(20.dp)
-                            .clip(RoundedCornerShape(5.dp))
+                            .size(24.dp)
+                            .clip(RoundedCornerShape(6.dp))
                             .background(ColorCardElevated)
-                            .border(1.dp, ColorBorder, RoundedCornerShape(5.dp)),
+                            .border(1.dp, ColorBorder, RoundedCornerShape(6.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         if (appBitmap != null) {
                             Image(
                                 bitmap = appBitmap,
                                 contentDescription = stats.mostUsedAppName,
-                                modifier = Modifier.size(13.dp)
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .clip(RoundedCornerShape(4.dp))
                             )
                         } else {
                             Text(
                                 text = stats.mostUsedAppName.take(1),
-                                fontSize = 9.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
                                 color = Color.White
@@ -547,21 +561,27 @@ private fun CardMostUsedApp(stats: HomeStats) {
                         }
                     }
 
-                    DotMatrixText(
-                        text = stats.mostUsedAppName.take(6),
-                        dotSize = 1.5.dp,
-                        dotSpacing = 0.4.dp,
-                        charSpacing = 0.7.dp,
-                        color = ColorRedAccent
-                    )
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(1.5.dp)
+                    ) {
+                        nameLines.forEach { line ->
+                            DotMatrixText(
+                                text = line,
+                                dotSize = 1.35.dp,
+                                dotSpacing = 0.35.dp,
+                                charSpacing = 0.55.dp,
+                                color = ColorRedAccent
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.width(6.dp))
 
                 DotMatrixText(
                     text = "${stats.mostUsedAppPercentage}%",
-                    dotSize = 1.5.dp,
-                    dotSpacing = 0.4.dp,
+                    dotSize = 1.6.dp,
+                    dotSpacing = 0.45.dp,
                     charSpacing = 0.7.dp,
                     color = Color.White
                 )

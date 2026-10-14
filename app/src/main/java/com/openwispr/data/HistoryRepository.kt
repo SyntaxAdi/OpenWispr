@@ -280,6 +280,25 @@ class HistoryRepository(private val context: Context) {
             }
         }
 
+        fun splitAppNameForDisplay(name: String, maxLineChars: Int = 9): List<String> {
+            val clean = name.trim()
+            if (clean.length <= maxLineChars) {
+                return listOf(clean)
+            }
+
+            val spaceIndex = clean.lastIndexOf(' ', maxLineChars)
+            if (spaceIndex > 0) {
+                val line1 = clean.substring(0, spaceIndex).trim()
+                val line2 = clean.substring(spaceIndex + 1).trim()
+                return listOf(line1.take(maxLineChars), line2.take(maxLineChars))
+            }
+
+            return listOf(
+                clean.take(maxLineChars),
+                clean.drop(maxLineChars).take(maxLineChars)
+            )
+        }
+
         fun calculateWpm(totalWords: Long, totalDurationMs: Long): Int {
             if (totalDurationMs <= 0L || totalWords <= 0L) return 0
             val minutes = totalDurationMs.toDouble() / 60000.0
