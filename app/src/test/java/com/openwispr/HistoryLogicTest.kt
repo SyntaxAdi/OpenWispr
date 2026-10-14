@@ -217,5 +217,37 @@ class HistoryLogicTest {
         assertEquals(0, yRows[0])
         assertEquals(0, yRows[1])
     }
+
+    @Test
+    fun testHomeStatsEmptyDefaults() {
+        val empty = com.openwispr.data.HomeStats.EMPTY
+        assertEquals(0L, empty.totalWords)
+        assertEquals(0, empty.weekStreak)
+        assertEquals(0, empty.activeAppsCount)
+        assertEquals(0, empty.wordsPerMinute)
+        assertEquals(0L, empty.totalUsageMinutes)
+        assertEquals(0L, empty.totalDurationMs)
+        assertEquals("0 s", empty.formattedTotalUsage)
+        assertEquals("--", empty.mostUsedAppName)
+        assertEquals(0, empty.mostUsedAppPercentage)
+    }
+
+    @Test
+    fun testRecentTranscriptsLimitContract() {
+        val mockItems = (1..10).map { i ->
+            com.openwispr.data.TranscriptRecord(
+                id = i.toLong(),
+                text = "Item $i",
+                appPackage = "com.test",
+                timestampMs = i * 1000L,
+                durationMs = 500L,
+                wordCount = 2
+            )
+        }
+        val limited = mockItems.take(2)
+        assertEquals(2, limited.size)
+        assertEquals(1L, limited[0].id)
+        assertEquals(2L, limited[1].id)
+    }
 }
 

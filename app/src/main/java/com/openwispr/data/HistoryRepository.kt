@@ -3,6 +3,9 @@ package com.openwispr.data
 import android.content.ContentValues
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.withContext
 import java.util.Calendar
 import java.util.Locale
@@ -17,10 +20,10 @@ data class TranscriptRecord(
 )
 
 data class HomeStats(
-    val totalWords: Long,
-    val weekStreak: Int,
-    val activeAppsCount: Int,
-    val wordsPerMinute: Int,
+    val totalWords: Long = 0L,
+    val weekStreak: Int = 0,
+    val activeAppsCount: Int = 0,
+    val wordsPerMinute: Int = 0,
     val totalUsageMinutes: Long = 0L,
     val totalDurationMs: Long = 0L,
     val formattedTotalUsage: String = "0 s",
@@ -32,10 +35,17 @@ data class HomeStats(
     val hourlyActivityCounts: Map<Int, Long> = emptyMap(), // 0..23 hours
     val peakHourRange: String = "--",
     val peakPercentageVsAvg: String = "--"
-)
+) {
+    companion object {
+        val EMPTY = HomeStats()
+    }
+}
 
 class HistoryRepository(private val context: Context) {
     private val dbHelper = HistoryDatabaseHelper(context.applicationContext)
+
+    private val _dataUpdates = MutableSharedFlow<Unit>(replay = 0, extraBufferCapacity = 1)
+    val dataUpdates: SharedFlow<Unit> = _dataUpdates.asSharedFlow()
 
     suspend fun insertTranscript(text: String, appPackage: String, durationMs: Long): Long = withContext(Dispatchers.IO) {
         val words = countWords(text)
@@ -47,7 +57,11 @@ class HistoryRepository(private val context: Context) {
             put(HistoryDatabaseHelper.COL_WORD_COUNT, words)
         }
         val db = dbHelper.writableDatabase
-        db.insert(HistoryDatabaseHelper.TABLE_TRANSCRIPTS, null, cv)
+        val id = db.insert(HistoryDatabaseHelper.TABLE_TRANSCRIPTS, null, cv)
+        if (id != -1L) {
+            _dataUpdates.tryEmit(Unit)
+        }
+        id
     }
 
     suspend fun deleteTranscript(id: Long): Boolean = withContext(Dispatchers.IO) {
@@ -57,7 +71,48 @@ class HistoryRepository(private val context: Context) {
             "${HistoryDatabaseHelper.COL_ID} = ?",
             arrayOf(id.toString())
         )
-        rows > 0
+        val success = rows > 0
+        if (success) {
+            _dataUpdates.tryEmit(Unit)
+        }
+        success
+    }
+
+    suspend fun getRecentTranscripts(limit: Int = 2): List<TranscriptRecord> = withContext(Dispatchers.IO) {
+        val db = dbHelper.readableDatabase
+        val list = mutableListOf<TranscriptRecord>()
+        val cursor = db.query(
+            HistoryDatabaseHelper.TABLE_TRANSCRIPTS,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "${HistoryDatabaseHelper.COL_TIMESTAMP_MS} DESC",
+            limit.coerceAtLeast(1).toString()
+        )
+        cursor.use { c ->
+            val idIdx = c.getColumnIndexOrThrow(HistoryDatabaseHelper.COL_ID)
+            val textIdx = c.getColumnIndexOrThrow(HistoryDatabaseHelper.COL_TEXT)
+            val appIdx = c.getColumnIndexOrThrow(HistoryDatabaseHelper.COL_APP_PACKAGE)
+            val timeIdx = c.getColumnIndexOrThrow(HistoryDatabaseHelper.COL_TIMESTAMP_MS)
+            val durIdx = c.getColumnIndexOrThrow(HistoryDatabaseHelper.COL_DURATION_MS)
+            val wordsIdx = c.getColumnIndexOrThrow(HistoryDatabaseHelper.COL_WORD_COUNT)
+
+            while (c.moveToNext()) {
+                list.add(
+                    TranscriptRecord(
+                        id = c.getLong(idIdx),
+                        text = c.getString(textIdx),
+                        appPackage = c.getString(appIdx),
+                        timestampMs = c.getLong(timeIdx),
+                        durationMs = c.getLong(durIdx),
+                        wordCount = c.getInt(wordsIdx)
+                    )
+                )
+            }
+        }
+        list
     }
 
     suspend fun getAllTranscripts(): List<TranscriptRecord> = withContext(Dispatchers.IO) {

@@ -13,6 +13,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -128,7 +130,9 @@ fun DotMatrixText(
     val totalHeightDp = dotSize * 7 + dotSpacing * 6
 
     Canvas(
-        modifier = modifier.size(width = totalWidthDp.coerceAtLeast(0.dp), height = totalHeightDp)
+        modifier = modifier
+            .size(width = totalWidthDp.coerceAtLeast(0.dp), height = totalHeightDp)
+            .semantics { contentDescription = text }
     ) {
         val dSize = dotSize.toPx()
         val dSpacing = dotSpacing.toPx()

@@ -1,9 +1,13 @@
 package com.openwispr.ui
 
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
+import android.os.PersistableBundle
 import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,6 +21,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
@@ -29,11 +36,11 @@ import com.openwispr.R
 import com.openwispr.data.HistoryRepository
 import com.openwispr.data.HomeStats
 import com.openwispr.data.TranscriptRecord
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import androidx.compose.foundation.Image
-import androidx.compose.ui.graphics.asImageBitmap
+import kotlinx.coroutines.withContext
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -59,20 +66,27 @@ fun HomeScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var stats by remember { mutableStateOf(HomeStats(0L, 0, 0, 0)) }
+    var stats by remember { mutableStateOf(HomeStats.EMPTY) }
     var transcripts by remember { mutableStateOf<List<TranscriptRecord>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
 
     fun refreshData() {
         scope.launch {
-            stats = historyRepo.getHomeStats()
-            transcripts = historyRepo.getAllTranscripts()
+            runCatching {
+                val newStats = historyRepo.getHomeStats()
+                val newRecent = historyRepo.getRecentTranscripts(limit = 2)
+                stats = newStats
+                transcripts = newRecent
+            }
             isLoading = false
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(historyRepo) {
         refreshData()
+        historyRepo.dataUpdates.collect {
+            refreshData()
+        }
     }
 
     Box(
@@ -146,14 +160,24 @@ fun HomeScreen(
                     onViewAll = onNavigateToHistory,
                     onCopy = { text ->
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Transcription", text))
-                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                        val clip = ClipData.newPlainText("Transcription", text).apply {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                description.extras = PersistableBundle().apply {
+                                    putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+                                }
+                            }
+                        }
+                        clipboard.setPrimaryClip(clip)
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                        }
                     },
                     onDelete = { id ->
                         scope.launch {
-                            historyRepo.deleteTranscript(id)
-                            refreshData()
-                            Toast.makeText(context, "Deleted", Toast.LENGTH_SHORT).show()
+                            val result = runCatching { historyRepo.deleteTranscript(id) }
+                            if (result.getOrDefault(false)) {
+                                Toast.makeText(context, "Deleted", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     }
                 )
@@ -198,9 +222,6 @@ private fun TopBarHeader(
         }
     }
 
-    val finalRedAlpha = (breathingAlpha * strobeMultiplier.value).coerceIn(0.15f, 1.0f)
-    val glowingRed = ColorRedAccent.copy(alpha = finalRedAlpha)
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -239,13 +260,19 @@ private fun TopBarHeader(
                 charSpacing = 2.8.dp,
                 color = Color.White
             )
-            DotMatrixText(
-                text = "Wispr",
-                dotSize = 3.4.dp,
-                dotSpacing = 1.1.dp,
-                charSpacing = 2.8.dp,
-                color = glowingRed
-            )
+            Box(
+                modifier = Modifier.graphicsLayer {
+                    alpha = (breathingAlpha * strobeMultiplier.value).coerceIn(0.15f, 1.0f)
+                }
+            ) {
+                DotMatrixText(
+                    text = "Wispr",
+                    dotSize = 3.4.dp,
+                    dotSpacing = 1.1.dp,
+                    charSpacing = 2.8.dp,
+                    color = ColorRedAccent
+                )
+            }
         }
     }
 }
@@ -466,35 +493,39 @@ private fun CardWeekStreak(stats: HomeStats) {
     }
 }
 
+private fun loadAppIconBitmap(context: Context, packageName: String?): ImageBitmap? {
+    if (packageName.isNullOrBlank() || packageName == "unknown") return null
+    val pm = context.packageManager
+    val drawable = try {
+        pm.getApplicationIcon(packageName)
+    } catch (e: Exception) {
+        try {
+            val intent = pm.getLaunchIntentForPackage(packageName)
+            if (intent != null) pm.getActivityIcon(intent) else null
+        } catch (e2: Exception) {
+            null
+        }
+    }
+    return drawable?.let { d ->
+        try {
+            val sizePx = 96
+            val bmp = android.graphics.Bitmap.createBitmap(sizePx, sizePx, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bmp)
+            d.setBounds(0, 0, sizePx, sizePx)
+            d.draw(canvas)
+            bmp.asImageBitmap()
+        } catch (e: Exception) {
+            null
+        }
+    }
+}
+
 @Composable
 private fun CardMostUsedApp(stats: HomeStats) {
     val context = LocalContext.current
-    val appBitmap = remember(stats.mostUsedAppPackage) {
-        stats.mostUsedAppPackage?.let { pkg ->
-            if (pkg.isBlank() || pkg == "unknown") return@let null
-            val pm = context.packageManager
-            val drawable = try {
-                pm.getApplicationIcon(pkg)
-            } catch (e: Exception) {
-                try {
-                    val intent = pm.getLaunchIntentForPackage(pkg)
-                    if (intent != null) pm.getActivityIcon(intent) else null
-                } catch (e2: Exception) {
-                    null
-                }
-            }
-            drawable?.let { d ->
-                try {
-                    val sizePx = 96
-                    val bmp = android.graphics.Bitmap.createBitmap(sizePx, sizePx, android.graphics.Bitmap.Config.ARGB_8888)
-                    val canvas = android.graphics.Canvas(bmp)
-                    d.setBounds(0, 0, sizePx, sizePx)
-                    d.draw(canvas)
-                    bmp.asImageBitmap()
-                } catch (e: Exception) {
-                    null
-                }
-            }
+    val appBitmap by produceState<ImageBitmap?>(initialValue = null, key1 = stats.mostUsedAppPackage) {
+        value = withContext(Dispatchers.IO) {
+            loadAppIconBitmap(context, stats.mostUsedAppPackage)
         }
     }
 
@@ -541,7 +572,7 @@ private fun CardMostUsedApp(stats: HomeStats) {
                 ) {
                     if (appBitmap != null) {
                         Image(
-                            bitmap = appBitmap,
+                            bitmap = appBitmap!!,
                             contentDescription = stats.mostUsedAppName,
                             modifier = Modifier
                                 .size(20.dp)
@@ -586,7 +617,7 @@ private fun CardMostUsedApp(stats: HomeStats) {
 
             // 4. Dual-Row Dot Matrix Progress Bar
             DotMatrixDualProgressBar(
-                progress = stats.mostUsedAppPercentage / 100f,
+                progress = (stats.mostUsedAppPercentage / 100f).coerceIn(0f, 1f),
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -825,74 +856,85 @@ private fun CardRecentDictations(
                     )
                 }
             } else {
+                val context = LocalContext.current
                 val recent = transcripts.take(2)
-                val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
+                val timeFormat = remember(context) { android.text.format.DateFormat.getTimeFormat(context) }
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     recent.forEach { item ->
-                        var menuOpen by remember { mutableStateOf(false) }
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF14151C))
-                                .border(1.dp, Color(0xFF262832), RoundedCornerShape(10.dp))
-                                .padding(10.dp)
-                        ) {
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(
-                                    text = item.text,
-                                    fontSize = 11.5.sp,
-                                    color = Color.White,
-                                    lineHeight = 15.sp
-                                )
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
+                        key(item.id) {
+                            var menuOpen by remember { mutableStateOf(false) }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFF14151C))
+                                    .border(1.dp, Color(0xFF262832), RoundedCornerShape(10.dp))
+                                    .padding(10.dp)
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Text(
-                                        text = timeFormat.format(Date(item.timestampMs)),
-                                        fontSize = 9.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = ColorSubtle
+                                        text = item.text,
+                                        fontSize = 11.5.sp,
+                                        color = Color.White,
+                                        lineHeight = 15.sp
                                     )
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Icon(
-                                            painter = painterResource(R.drawable.ic_copy),
-                                            contentDescription = "Copy",
-                                            tint = ColorMuted,
-                                            modifier = Modifier
-                                                .size(14.dp)
-                                                .clickable { onCopy(item.text) }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = timeFormat.format(Date(item.timestampMs)),
+                                            fontSize = 9.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = ColorSubtle
                                         )
-                                        Box {
-                                            Icon(
-                                                painter = painterResource(R.drawable.ic_more_vert),
-                                                contentDescription = "More",
-                                                tint = ColorMuted,
+                                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Box(
                                                 modifier = Modifier
-                                                    .size(14.dp)
-                                                    .clickable { menuOpen = true }
-                                            )
-                                            DropdownMenu(
-                                                expanded = menuOpen,
-                                                onDismissRequest = { menuOpen = false }
+                                                    .size(28.dp)
+                                                    .clickable { onCopy(item.text) },
+                                                contentAlignment = Alignment.Center
                                             ) {
-                                                DropdownMenuItem(
-                                                    text = { Text("Delete", color = ColorRedAccent) },
-                                                    leadingIcon = {
-                                                        Icon(
-                                                            painter = painterResource(R.drawable.ic_delete),
-                                                            contentDescription = null,
-                                                            tint = ColorRedAccent
-                                                        )
-                                                    },
-                                                    onClick = {
-                                                        menuOpen = false
-                                                        onDelete(item.id)
-                                                    }
+                                                Icon(
+                                                    painter = painterResource(R.drawable.ic_copy),
+                                                    contentDescription = "Copy transcription",
+                                                    tint = ColorMuted,
+                                                    modifier = Modifier.size(15.dp)
                                                 )
+                                            }
+                                            Box(
+                                                modifier = Modifier.size(28.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    painter = painterResource(R.drawable.ic_more_vert),
+                                                    contentDescription = "More actions",
+                                                    tint = ColorMuted,
+                                                    modifier = Modifier
+                                                        .size(15.dp)
+                                                        .clickable { menuOpen = true }
+                                                )
+                                                DropdownMenu(
+                                                    expanded = menuOpen,
+                                                    onDismissRequest = { menuOpen = false }
+                                                ) {
+                                                    DropdownMenuItem(
+                                                        text = { Text("Delete", color = ColorRedAccent) },
+                                                        leadingIcon = {
+                                                            Icon(
+                                                                painter = painterResource(R.drawable.ic_delete),
+                                                                contentDescription = null,
+                                                                tint = ColorRedAccent
+                                                            )
+                                                        },
+                                                        onClick = {
+                                                            menuOpen = false
+                                                            onDelete(item.id)
+                                                        }
+                                                    )
+                                                }
                                             }
                                         }
                                     }
