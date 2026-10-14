@@ -24,8 +24,7 @@ class HistoryDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABA
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Simple schema migration strategy
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_TRANSCRIPTS")
+        // Non-destructive migration: preserve user transcripts across version upgrades
         onCreate(db)
     }
 

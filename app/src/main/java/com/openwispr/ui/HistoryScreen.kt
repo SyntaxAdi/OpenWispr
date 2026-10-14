@@ -1,8 +1,11 @@
 package com.openwispr.ui
 
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
+import android.os.PersistableBundle
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -50,15 +53,16 @@ fun HistoryScreen(
     var transcripts by remember { mutableStateOf<List<TranscriptRecord>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
 
-    fun refresh() {
-        scope.launch {
-            transcripts = historyRepo.getAllTranscripts()
-            isLoading = false
-        }
-    }
-
     LaunchedEffect(Unit) {
-        refresh()
+        historyRepo.dataUpdates.collect {
+            try {
+                transcripts = historyRepo.getAllTranscripts()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                isLoading = false
+            }
+        }
     }
 
     val grouped = remember(transcripts) {
@@ -201,8 +205,17 @@ fun HistoryScreen(
                                             .size(16.dp)
                                             .clickable {
                                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                                clipboard.setPrimaryClip(ClipData.newPlainText("Transcription", item.text))
-                                                Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                                val clip = ClipData.newPlainText("Transcription", item.text).apply {
+                                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                                        description.extras = PersistableBundle().apply {
+                                                            putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+                                                        }
+                                                    }
+                                                }
+                                                clipboard.setPrimaryClip(clip)
+                                                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                                                    Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                                }
                                             }
                                     )
                                     Box {
@@ -230,9 +243,13 @@ fun HistoryScreen(
                                                 onClick = {
                                                     menuOpen = false
                                                     scope.launch {
-                                                        historyRepo.deleteTranscript(item.id)
-                                                        refresh()
-                                                        Toast.makeText(context, "Deleted", Toast.LENGTH_SHORT).show()
+                                                        try {
+                                                            historyRepo.deleteTranscript(item.id)
+                                                            Toast.makeText(context, "Deleted", Toast.LENGTH_SHORT).show()
+                                                        } catch (e: Exception) {
+                                                            e.printStackTrace()
+                                                            Toast.makeText(context, "Delete failed", Toast.LENGTH_SHORT).show()
+                                                        }
                                                     }
                                                 }
                                             )

@@ -17,8 +17,8 @@ class AudioRecorder(private val context: Context) {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                setAudioSamplingRate(44100)
-                setAudioEncodingBitRate(128000)
+                setAudioSamplingRate(SAMPLE_RATE_HZ)
+                setAudioEncodingBitRate(BIT_RATE)
                 setAudioChannels(1)
                 setOutputFile(f.absolutePath)
                 prepare()
@@ -35,16 +35,34 @@ class AudioRecorder(private val context: Context) {
     }
 
     fun stop(): File? {
-        val r = recorder ?: return outFile
-        return try { r.stop(); r.reset(); r.release(); recorder = null; outFile } catch (e: Exception) {
-            e.printStackTrace(); release(); outFile
+        val r = recorder
+        val f = outFile
+        recorder = null
+        if (r == null) {
+            return if (f != null && f.exists() && f.length() >= MIN_VALID_AUDIO_BYTES) f else null
+        }
+        return try {
+            r.stop()
+            safeRelease(r)
+            if (f != null && f.exists() && f.length() >= MIN_VALID_AUDIO_BYTES) {
+                f
+            } else {
+                f?.delete()
+                outFile = null
+                null
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            safeRelease(r)
+            f?.delete()
+            outFile = null
+            null
         }
     }
 
     fun cancelAndDelete() {
         try { recorder?.stop() } catch (_: Exception) {}
-        try { recorder?.reset(); recorder?.release() } catch (_: Exception) {}
-        recorder = null
+        release()
         outFile?.delete()
         outFile = null
     }
@@ -52,7 +70,19 @@ class AudioRecorder(private val context: Context) {
     fun getMaxAmplitude(): Int = try { recorder?.maxAmplitude ?: 0 } catch (_: Exception) { 0 }
 
     private fun release() {
-        try { recorder?.release() } catch (_: Exception) {}
+        val r = recorder
         recorder = null
+        safeRelease(r)
+    }
+
+    private fun safeRelease(r: MediaRecorder?) {
+        try { r?.reset() } catch (_: Exception) {}
+        try { r?.release() } catch (_: Exception) {}
+    }
+
+    companion object {
+        const val SAMPLE_RATE_HZ = 16000
+        const val BIT_RATE = 64000
+        const val MIN_VALID_AUDIO_BYTES = 512L
     }
 }
