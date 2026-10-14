@@ -249,5 +249,16 @@ class HistoryLogicTest {
         assertEquals(1L, limited[0].id)
         assertEquals(2L, limited[1].id)
     }
+
+    @Test
+    fun testHistoryScreenHeaderUsesDotMatrixHistory() {
+        val historyFile = java.io.File("src/main/java/com/openwispr/ui/HistoryScreen.kt")
+        if (historyFile.exists()) {
+            val content = historyFile.readText()
+            assertTrue("HistoryScreen must contain DotMatrixText with HISTORY", content.contains("text = \"HISTORY\""))
+            assertTrue("HistoryScreen must not contain raw DICTATION HISTORY text", !content.contains("text = \"DICTATION HISTORY\""))
+        }
+    }
 }
+
 

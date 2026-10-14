@@ -37,10 +37,12 @@ import java.util.Locale
 
 private val ColorDarkBg = Color(0xFF000000)
 private val ColorCardBg = Color(0xFF070709)
+private val ColorCardElevated = Color(0xFF101014)
 private val ColorBorder = Color(0xFF141416)
 private val ColorRedAccent = Color(0xFFFF2E2E)
 private val ColorMuted = Color(0xFF8E95A2)
 private val ColorSubtle = Color(0xFF555B66)
+
 
 @Composable
 fun HistoryScreen(
@@ -93,50 +95,63 @@ fun HistoryScreen(
         ) {
             // Top Header
             item {
-                Row(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .height(44.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    // Left back button - 44dp squircle
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(ColorCardBg)
+                            .border(1.dp, ColorBorder, RoundedCornerShape(10.dp))
+                            .clickable { onBackToHome() }
+                            .align(Alignment.CenterStart),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(ColorCardBg)
-                                .border(1.dp, ColorBorder, RoundedCornerShape(10.dp))
-                                .clickable { onBackToHome() },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "←",
-                                fontSize = 16.sp,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
                         Text(
-                            text = "DICTATION HISTORY",
-                            fontSize = 14.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
+                            text = "←",
+                            fontSize = 18.sp,
                             color = Color.White,
-                            letterSpacing = 1.sp
+                            fontWeight = FontWeight.Bold
                         )
                     }
-                    Text(
-                        text = if (isLoading) "Loading..." else "${transcripts.size} records",
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = ColorSubtle
+
+                    // Center Title: Dot Matrix HISTORY aligned to same level as back button
+                    DotMatrixText(
+                        text = "HISTORY",
+                        dotSize = 3.0.dp,
+                        dotSpacing = 1.0.dp,
+                        charSpacing = 2.2.dp,
+                        color = Color.White,
+                        modifier = Modifier.align(Alignment.Center)
                     )
+
+                    // Right Badge: Telemetry record count
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(ColorCardElevated)
+                            .border(1.dp, ColorBorder, RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .align(Alignment.CenterEnd)
+                    ) {
+                        Text(
+                            text = if (isLoading) "SYNCING..." else "${transcripts.size} RECORDS",
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = ColorSubtle,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
                 }
             }
+
+
 
             if (isLoading) {
                 item {

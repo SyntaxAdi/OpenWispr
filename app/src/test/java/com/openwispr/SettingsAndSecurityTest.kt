@@ -36,4 +36,17 @@ class SettingsAndSecurityTest {
         // In JVM test without Android KeyStore, encrypt returns null safely
         assertTrue(encrypted == null || encrypted.isNotEmpty())
     }
+
+    @Test
+    fun testNoGreenColorInSettingsScreenSource() {
+        val settingsFile = java.io.File("src/main/java/com/openwispr/ui/SettingsScreen.kt")
+        if (settingsFile.exists()) {
+            val content = settingsFile.readText()
+            assertTrue("SettingsScreen must not contain ColorGreenAccent", !content.contains("ColorGreenAccent"))
+            assertTrue("SettingsScreen must not contain 0xFF00C853", !content.contains("0xFF00C853"))
+            assertTrue("SettingsScreen must not contain 0xFF00E676", !content.contains("0xFF00E676"))
+            assertTrue("SettingsScreen must not contain Color.Green", !content.contains("Color.Green"))
+        }
+    }
 }
+
