@@ -24,22 +24,30 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.core.*
 import com.openwispr.R
 import com.openwispr.data.HistoryRepository
 import com.openwispr.data.HomeStats
 import com.openwispr.data.TranscriptRecord
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// Nothing OS Dark Theme Palette
-private val ColorDarkBg = Color(0xFF070709)
-private val ColorCardBg = Color(0xFF0E0F14)
-private val ColorBorder = Color(0xFF1E2028)
+// Deep OLED Pitch Black Palette
+private val ColorDarkBg = Color(0xFF000000)
+private val ColorCardBg = Color(0xFF070709)
+private val ColorCardElevated = Color(0xFF101014)
+private val ColorBorder = Color(0xFF141416)
 private val ColorRedAccent = Color(0xFFFF2E2E)
-private val ColorMuted = Color(0xFF9CA3AF)
-private val ColorSubtle = Color(0xFF6B7280)
+private val ColorGreenAccent = Color(0xFF00E676)
+private val ColorMuted = Color(0xFF8E95A2)
+private val ColorSubtle = Color(0xFF555B66)
 
 @Composable
 fun HomeScreen(
@@ -72,12 +80,18 @@ fun HomeScreen(
             .fillMaxSize()
             .background(ColorDarkBg)
     ) {
+        val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        val navBarPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 14.dp),
-            contentPadding = PaddingValues(top = 14.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 12.dp),
+            contentPadding = PaddingValues(
+                top = statusBarPadding + 10.dp,
+                bottom = navBarPadding + 24.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // 1. Top Header Bar
             item {
@@ -86,36 +100,40 @@ fun HomeScreen(
                 )
             }
 
-            // 2. Card 01: TOTAL WORDS SPOKEN (Hero Card)
+            // 2. Card 01: TOTAL WORDS SPOKEN (Hero Card with 24h Peak Activity)
             item {
                 CardTotalWordsSpoken(stats = stats)
             }
 
-            // 3. Row of 2 Cards: 02 WEEK STREAK & 03 APPS TRACKED
+            // 3. Row of 2 Cards: WEEK STREAK & APPS TRACKED (Twin Heights)
             item {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Max),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Box(modifier = Modifier.weight(1f)) {
+                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                         CardWeekStreak(stats = stats)
                     }
-                    Box(modifier = Modifier.weight(1f)) {
-                        CardAppsTracked(stats = stats)
+                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                        CardMostUsedApp(stats = stats)
                     }
                 }
             }
 
-            // 4. Row of 2 Cards: 04 SPEAKING SPEED & 05 TOTAL USAGE
+            // 4. Row of 2 Cards: SPEAKING SPEED & TOTAL USAGE (Twin Heights)
             item {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Max),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Box(modifier = Modifier.weight(1f)) {
+                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                         CardSpeakingSpeed(stats = stats)
                     }
-                    Box(modifier = Modifier.weight(1f)) {
+                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                         CardTotalUsage(stats = stats)
                     }
                 }
@@ -145,7 +163,7 @@ fun HomeScreen(
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Box(modifier = Modifier.weight(1f)) {
                         CardAccuracyTeaser()
@@ -163,17 +181,51 @@ fun HomeScreen(
 private fun TopBarHeader(
     onOpenDrawer: () -> Unit
 ) {
+    // 1. Smooth Breathing cycle (sine wave oscillation)
+    val infiniteTransition = rememberInfiniteTransition(label = "WisprBreathing")
+    val breathingAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "BreathingAlpha"
+    )
+
+    // 2. Randomized Strobing / Micro-flicker bursts (gaming keyboard effect)
+    val strobeMultiplier = remember { Animatable(1.0f) }
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            delay(kotlin.random.Random.nextLong(2800L, 6500L))
+            // Quick neon/keyboard strobe burst sequence
+            strobeMultiplier.snapTo(0.20f)
+            delay(30)
+            strobeMultiplier.snapTo(0.95f)
+            delay(40)
+            strobeMultiplier.snapTo(0.15f)
+            delay(25)
+            strobeMultiplier.snapTo(1.0f)
+            delay(45)
+            strobeMultiplier.snapTo(0.35f)
+            delay(35)
+            strobeMultiplier.animateTo(1.0f, tween(100))
+        }
+    }
+
+    val finalRedAlpha = (breathingAlpha * strobeMultiplier.value).coerceIn(0.15f, 1.0f)
+    val glowingRed = ColorRedAccent.copy(alpha = finalRedAlpha)
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .padding(top = 10.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Left hamburger button
+        // Left hamburger button - enlarged to 44dp with 20dp icon
         Box(
             modifier = Modifier
-                .size(38.dp)
+                .size(44.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .background(ColorCardBg)
                 .border(1.dp, ColorBorder, RoundedCornerShape(10.dp))
@@ -184,18 +236,32 @@ private fun TopBarHeader(
                 painter = painterResource(R.drawable.ic_menu),
                 contentDescription = "Menu",
                 tint = Color.White,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(20.dp)
             )
         }
 
-        // Center: Dot-Matrix Title
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            DotMatrixText("Open ", dotSize = 2.4.dp, dotSpacing = 0.9.dp, charSpacing = 1.4.dp, color = Color.White)
-            DotMatrixText("Wispr", dotSize = 2.4.dp, dotSpacing = 0.9.dp, charSpacing = 1.4.dp, color = ColorRedAccent)
-        }
+        Spacer(modifier = Modifier.width(16.dp))
 
-        // Right spacer to keep title centered
-        Spacer(modifier = Modifier.size(38.dp))
+        // Title: Dot-Matrix Title with Breathing & Strobing Red LEDs stretched towards right
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            DotMatrixText(
+                text = "Open ",
+                dotSize = 3.4.dp,
+                dotSpacing = 1.1.dp,
+                charSpacing = 2.8.dp,
+                color = Color.White
+            )
+            DotMatrixText(
+                text = "Wispr",
+                dotSize = 3.4.dp,
+                dotSpacing = 1.1.dp,
+                charSpacing = 2.8.dp,
+                color = glowingRed
+            )
+        }
     }
 }
 
@@ -204,82 +270,9 @@ private fun CardTotalWordsSpoken(stats: HomeStats) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(ColorCardBg)
-            .border(1.dp, ColorBorder, RoundedCornerShape(18.dp))
-            .padding(16.dp)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            // Header Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "TOTAL WORDS SPOKEN",
-                    fontSize = 10.5.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = ColorMuted,
-                    letterSpacing = 0.5.sp
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    Box(modifier = Modifier.size(6.dp).background(ColorRedAccent, CircleShape))
-                    Text(
-                        text = "LIVE",
-                        fontSize = 10.5.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        color = ColorRedAccent,
-                        letterSpacing = 0.5.sp
-                    )
-                }
-            }
-
-            // Metric Value & Equalizer Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
-            ) {
-                Column(modifier = Modifier.weight(1f, fill = false)) {
-                    DotMatrixText(
-                        text = stats.totalWords.toString(),
-                        dotSize = 4.0.dp,
-                        dotSpacing = 1.4.dp,
-                        color = Color.White
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Words spoken so far",
-                        fontSize = 12.sp,
-                        color = ColorMuted
-                    )
-                }
-
-                // Weekly 7-day dot equalizer
-                DotWeeklyEqualizer(
-                    dayWordCounts = stats.weeklyDayCounts,
-                    modifier = Modifier.width(118.dp),
-                    dotSize = 2.4.dp,
-                    dotSpacing = 1.2.dp
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CardWeekStreak(stats: HomeStats) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(ColorCardBg)
-            .border(1.dp, ColorBorder, RoundedCornerShape(16.dp))
+            .border(1.dp, ColorBorder, RoundedCornerShape(14.dp))
             .padding(14.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -290,42 +283,171 @@ private fun CardWeekStreak(stats: HomeStats) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "WEEK STREAK",
+                    text = "TOTAL WORDS SPOKEN",
                     fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = ColorMuted,
+                    letterSpacing = 0.8.sp
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Box(modifier = Modifier.size(5.dp).background(ColorRedAccent, CircleShape))
+                    Text(
+                        text = "LIVE",
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = ColorRedAccent,
+                        letterSpacing = 0.5.sp
+                    )
+                }
+            }
+
+            // Hero Volume Row: Left Dot-Matrix Word Count + Right Peak Habit Insight Badge
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    DotMatrixText(
+                        text = NumberFormat.getNumberInstance(Locale.US).format(stats.totalWords),
+                        dotSize = 3.8.dp,
+                        dotSpacing = 1.2.dp,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Words spoken across all apps",
+                        fontSize = 10.5.sp,
+                        color = ColorMuted
+                    )
+                }
+
+                // Peak Habit Insight Pill Badge
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(ColorCardElevated)
+                        .border(1.dp, ColorBorder, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Column(horizontalAlignment = Alignment.End) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "PEAK",
+                                fontSize = 7.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = ColorMuted,
+                                letterSpacing = 0.5.sp
+                            )
+                            Text(
+                                text = stats.peakHourRange,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color.White
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        val pctText = if (stats.peakPercentageVsAvg != "--") {
+                            "▲ ${stats.peakPercentageVsAvg} vs avg"
+                        } else {
+                            "-- vs avg"
+                        }
+                        Text(
+                            text = pctText,
+                            fontSize = 8.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (stats.peakPercentageVsAvg != "--") ColorGreenAccent else ColorMuted
+                        )
+                    }
+                }
+            }
+
+            // Subtle 1px divider separating aggregate metric from 24h temporal habit timeline
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(ColorBorder)
+            )
+
+            // Bottom Row: Full-Width 24-Hour Timeline Graph
+            DotHourlyTimelineGraph(
+                hourlyActivityCounts = stats.hourlyActivityCounts,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Composable
+private fun CardWeekStreak(stats: HomeStats) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(14.dp))
+            .background(ColorCardBg)
+            .border(1.dp, ColorBorder, RoundedCornerShape(14.dp))
+            .padding(10.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Header Row
+                Text(
+                    text = "WEEK STREAK",
+                    fontSize = 8.sp,
                     fontFamily = FontFamily.Monospace,
                     color = ColorMuted
                 )
-                Icon(
-                    painter = painterResource(R.drawable.ic_flame),
-                    contentDescription = null,
-                    tint = ColorRedAccent,
-                    modifier = Modifier.size(16.dp)
+
+                // Level-aligned enlarged Metric and Flame moved towards right
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        DotMatrixText(
+                            text = "${stats.weekStreak} ",
+                            dotSize = 2.4.dp,
+                            dotSpacing = 0.8.dp,
+                            charSpacing = 1.2.dp,
+                            color = Color.White
+                        )
+                        DotMatrixText(
+                            text = "Days",
+                            dotSize = 2.4.dp,
+                            dotSpacing = 0.8.dp,
+                            charSpacing = 1.2.dp,
+                            color = ColorRedAccent
+                        )
+                    }
+
+                    DotMatrixFlame()
+                }
+
+                Text(
+                    text = "Keep going!",
+                    fontSize = 9.sp,
+                    color = ColorMuted
                 )
             }
 
-            // Value Row
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                DotMatrixText(
-                    text = "${stats.weekStreak} ",
-                    dotSize = 2.2.dp,
-                    dotSpacing = 0.7.dp,
-                    charSpacing = 1.2.dp,
-                    color = Color.White
-                )
-                DotMatrixText(
-                    text = "Days",
-                    dotSize = 2.2.dp,
-                    dotSpacing = 0.7.dp,
-                    charSpacing = 1.2.dp,
-                    color = ColorRedAccent
-                )
-            }
-
-            Text(
-                text = "Keep going!",
-                fontSize = 10.5.sp,
-                color = ColorMuted
-            )
+            Spacer(modifier = Modifier.height(4.dp))
 
             // S M T W T F S Dots (0=Sun, 1=Mon, ..., 6=Sat)
             Row(
@@ -337,17 +459,17 @@ private fun CardWeekStreak(stats: HomeStats) {
                     val isDayActive = stats.activeWeekdays.contains(i)
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         Text(
                             text = days[i],
-                            fontSize = 8.5.sp,
+                            fontSize = 7.5.sp,
                             fontFamily = FontFamily.Monospace,
                             color = ColorSubtle
                         )
                         Box(
                             modifier = Modifier
-                                .size(6.dp)
+                                .size(5.dp)
                                 .border(1.dp, if (isDayActive) ColorRedAccent else ColorSubtle, CircleShape)
                                 .background(if (isDayActive) ColorRedAccent else Color.Transparent, CircleShape)
                         )
@@ -359,54 +481,115 @@ private fun CardWeekStreak(stats: HomeStats) {
 }
 
 @Composable
-private fun CardAppsTracked(stats: HomeStats) {
+private fun CardMostUsedApp(stats: HomeStats) {
+    val context = LocalContext.current
+    val appIconDrawable = remember(stats.mostUsedAppPackage) {
+        stats.mostUsedAppPackage?.let { pkg ->
+            try {
+                context.packageManager.getApplicationIcon(pkg)
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+    val appBitmap = remember(appIconDrawable) {
+        appIconDrawable?.let { d ->
+            val w = d.intrinsicWidth.coerceAtLeast(1)
+            val h = d.intrinsicHeight.coerceAtLeast(1)
+            val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bmp)
+            d.setBounds(0, 0, w, h)
+            d.draw(canvas)
+            bmp.asImageBitmap()
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(14.dp))
             .background(ColorCardBg)
-            .border(1.dp, ColorBorder, RoundedCornerShape(16.dp))
-            .padding(14.dp)
+            .border(1.dp, ColorBorder, RoundedCornerShape(14.dp))
+            .padding(10.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            // Header Row
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // 1. Header
+            Text(
+                text = "MOST USED APP",
+                fontSize = 8.sp,
+                fontFamily = FontFamily.Monospace,
+                color = ColorMuted
+            )
+
+            // 2. Middle Row: App Icon + Name (Red) + Percentage (White)
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = "APPS TRACKED",
-                    fontSize = 9.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = ColorMuted
-                )
-                DotAppMatrix(activeCount = stats.activeAppsCount)
-            }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(ColorCardElevated)
+                            .border(1.dp, ColorBorder, RoundedCornerShape(6.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (appBitmap != null) {
+                            Image(
+                                bitmap = appBitmap,
+                                contentDescription = stats.mostUsedAppName,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        } else {
+                            Text(
+                                text = stats.mostUsedAppName.take(1),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color.White
+                            )
+                        }
+                    }
 
-            // Value Row
-            Row(verticalAlignment = Alignment.CenterVertically) {
+                    DotMatrixText(
+                        text = stats.mostUsedAppName.take(8),
+                        dotSize = 2.0.dp,
+                        dotSpacing = 0.6.dp,
+                        charSpacing = 1.0.dp,
+                        color = ColorRedAccent
+                    )
+                }
+
                 DotMatrixText(
-                    text = "${stats.activeAppsCount} ",
-                    dotSize = 2.2.dp,
-                    dotSpacing = 0.7.dp,
-                    charSpacing = 1.2.dp,
+                    text = "${stats.mostUsedAppPercentage}%",
+                    dotSize = 2.0.dp,
+                    dotSpacing = 0.6.dp,
+                    charSpacing = 1.0.dp,
                     color = Color.White
                 )
-                DotMatrixText(
-                    text = "apps",
-                    dotSize = 2.2.dp,
-                    dotSpacing = 0.7.dp,
-                    charSpacing = 1.2.dp,
-                    color = ColorRedAccent
-                )
             }
 
+            // 3. Dual-Row Dot Matrix Progress Bar
+            DotMatrixDualProgressBar(
+                progress = stats.mostUsedAppPercentage / 100f,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // 4. Subtitle
             Text(
-                text = "Number of apps\nyou are flowing in",
-                fontSize = 10.5.sp,
+                text = "Of total words spoken",
+                fontSize = 8.5.sp,
                 color = ColorMuted,
-                lineHeight = 14.sp
+                maxLines = 1
             )
         }
     }
@@ -417,48 +600,56 @@ private fun CardSpeakingSpeed(stats: HomeStats) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(14.dp))
             .background(ColorCardBg)
-            .border(1.dp, ColorBorder, RoundedCornerShape(16.dp))
-            .padding(14.dp)
+            .border(1.dp, ColorBorder, RoundedCornerShape(14.dp))
+            .padding(10.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            // Header Row
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Header
+            Text(
+                text = "SPEAKING SPEED",
+                fontSize = 8.sp,
+                fontFamily = FontFamily.Monospace,
+                color = ColorMuted
+            )
+
+            // Level-aligned Metric (horizontally stretched WPM) and Diagonal Ascending Dotted Streak
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(end = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "SPEAKING SPEED",
-                    fontSize = 8.5.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = ColorMuted
-                )
-                DotWaveformApex()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    DotMatrixText(
+                        text = "${stats.wordsPerMinute} ",
+                        dotSize = 2.2.dp,
+                        dotSpacing = 0.8.dp,
+                        charSpacing = 1.2.dp,
+                        color = Color.White
+                    )
+                    DotMatrixText(
+                        text = "WPM",
+                        dotSize = 2.2.dp,
+                        dotSpacing = 0.8.dp,
+                        charSpacing = 1.2.dp,
+                        color = ColorRedAccent
+                    )
+                }
+
+                DotSpeedAscentStreak()
             }
 
-            // Value Row
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                DotMatrixText(
-                    text = "${stats.wordsPerMinute} ",
-                    dotSize = 2.2.dp,
-                    dotSpacing = 0.7.dp,
-                    charSpacing = 1.2.dp,
-                    color = Color.White
-                )
-                DotMatrixText(
-                    text = "WPM",
-                    dotSize = 2.2.dp,
-                    dotSpacing = 0.7.dp,
-                    charSpacing = 1.2.dp,
-                    color = ColorRedAccent
-                )
-            }
-
+            // Subtitle
             Text(
                 text = "Total words per minute",
-                fontSize = 10.5.sp,
+                fontSize = 8.5.sp,
                 color = ColorMuted,
                 maxLines = 1
             )
@@ -471,59 +662,57 @@ private fun CardTotalUsage(stats: HomeStats) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(14.dp))
             .background(ColorCardBg)
-            .border(1.dp, ColorBorder, RoundedCornerShape(16.dp))
-            .padding(14.dp)
+            .border(1.dp, ColorBorder, RoundedCornerShape(14.dp))
+            .padding(10.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            // Header Row
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Header with Clock Icon
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_clock),
+                    contentDescription = null,
+                    tint = ColorMuted,
+                    modifier = Modifier.size(10.dp)
+                )
+                Text(
+                    text = "TOTAL USAGE",
+                    fontSize = 8.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = ColorMuted
+                )
+            }
+
+            // Level-aligned Metric and Equalizer Meters
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(end = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_clock),
-                        contentDescription = null,
-                        tint = ColorMuted,
-                        modifier = Modifier.size(11.dp)
-                    )
-                    Text(
-                        text = "TOTAL USAGE",
-                        fontSize = 8.5.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = ColorMuted
-                    )
-                }
+                DotMatrixUsageDisplay(
+                    formattedText = stats.formattedTotalUsage,
+                    dotSize = 2.0.dp,
+                    dotSpacing = 0.7.dp,
+                    charSpacing = 0.9.dp
+                )
+
                 DotUsageMeters()
             }
 
-            // Value Row
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                DotMatrixText(
-                    text = "${stats.totalUsageMinutes} ",
-                    dotSize = 2.2.dp,
-                    dotSpacing = 0.7.dp,
-                    charSpacing = 1.2.dp,
-                    color = Color.White
-                )
-                DotMatrixText(
-                    text = "m",
-                    dotSize = 2.2.dp,
-                    dotSpacing = 0.7.dp,
-                    charSpacing = 1.2.dp,
-                    color = ColorRedAccent
-                )
-            }
-
+            // Subtitle
             Text(
                 text = "Total dictation time",
-                fontSize = 10.5.sp,
+                fontSize = 8.5.sp,
                 color = ColorMuted,
                 maxLines = 1
             )
@@ -541,12 +730,12 @@ private fun CardRecentDictations(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(ColorCardBg)
-            .border(1.dp, ColorBorder, RoundedCornerShape(18.dp))
-            .padding(16.dp)
+            .border(1.dp, ColorBorder, RoundedCornerShape(14.dp))
+            .padding(12.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             // Header Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -555,14 +744,14 @@ private fun CardRecentDictations(
             ) {
                 Text(
                     text = "RECENT DICTATIONS",
-                    fontSize = 10.5.sp,
+                    fontSize = 9.sp,
                     fontFamily = FontFamily.Monospace,
                     color = ColorMuted,
                     letterSpacing = 0.5.sp
                 )
                 Text(
                     text = "View All →",
-                    fontSize = 11.sp,
+                    fontSize = 9.5.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -571,38 +760,35 @@ private fun CardRecentDictations(
             }
 
             if (transcripts.isEmpty()) {
-                // Exact Empty State from Screenshot
+                // Exact Empty State from Screenshot - Modern Compact Proportions
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 20.dp),
+                        .padding(vertical = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Dotted document graphic with overlapping mic badge
                     Box(
-                        modifier = Modifier.size(72.dp),
+                        modifier = Modifier.size(54.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        // Dotted outline document
                         Box(
                             modifier = Modifier
-                                .size(50.dp, 60.dp)
-                                .border(1.dp, Color(0x66FFFFFF), RoundedCornerShape(8.dp))
-                                .padding(8.dp)
+                                .size(36.dp, 44.dp)
+                                .border(1.dp, Color(0x66FFFFFF), RoundedCornerShape(6.dp))
+                                .padding(6.dp)
                         ) {
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Box(modifier = Modifier.size(18.dp, 2.dp).background(Color(0x66FFFFFF)))
-                                Box(modifier = Modifier.size(24.dp, 2.dp).background(Color(0x66FFFFFF)))
-                                Box(modifier = Modifier.size(14.dp, 2.dp).background(Color(0x66FFFFFF)))
+                            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Box(modifier = Modifier.size(14.dp, 1.5.dp).background(Color(0x66FFFFFF)))
+                                Box(modifier = Modifier.size(18.dp, 1.5.dp).background(Color(0x66FFFFFF)))
+                                Box(modifier = Modifier.size(10.dp, 1.5.dp).background(Color(0x66FFFFFF)))
                             }
                         }
 
-                        // Red circular mic badge
                         Box(
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
-                                .size(28.dp)
+                                .size(22.dp)
                                 .clip(CircleShape)
                                 .background(Color(0xFF1C1D24))
                                 .border(1.dp, ColorRedAccent, CircleShape),
@@ -612,48 +798,47 @@ private fun CardRecentDictations(
                                 painter = painterResource(R.drawable.ic_mic),
                                 contentDescription = null,
                                 tint = ColorRedAccent,
-                                modifier = Modifier.size(14.dp)
+                                modifier = Modifier.size(11.dp)
                             )
                         }
                     }
 
                     Text(
                         text = "No dictations yet",
-                        fontSize = 16.sp,
+                        fontSize = 13.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
 
                     Text(
                         text = "Tap the floating bubble in any text field to dictate.\nYour transcription history and speech metrics\nwill appear here.",
-                        fontSize = 11.sp,
+                        fontSize = 9.5.sp,
                         color = ColorMuted,
                         textAlign = TextAlign.Center,
-                        lineHeight = 16.sp
+                        lineHeight = 13.5.sp
                     )
                 }
             } else {
-                // Show most recent 2 dictation items
                 val recent = transcripts.take(2)
                 val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
 
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     recent.forEach { item ->
                         var menuOpen by remember { mutableStateOf(false) }
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(10.dp))
                                 .background(Color(0xFF14151C))
-                                .border(1.dp, Color(0xFF262832), RoundedCornerShape(12.dp))
-                                .padding(12.dp)
+                                .border(1.dp, Color(0xFF262832), RoundedCornerShape(10.dp))
+                                .padding(10.dp)
                         ) {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(
                                     text = item.text,
-                                    fontSize = 13.sp,
+                                    fontSize = 11.5.sp,
                                     color = Color.White,
-                                    lineHeight = 18.sp
+                                    lineHeight = 15.sp
                                 )
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -662,17 +847,17 @@ private fun CardRecentDictations(
                                 ) {
                                     Text(
                                         text = timeFormat.format(Date(item.timestampMs)),
-                                        fontSize = 10.sp,
+                                        fontSize = 9.sp,
                                         fontFamily = FontFamily.Monospace,
                                         color = ColorSubtle
                                     )
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Icon(
                                             painter = painterResource(R.drawable.ic_copy),
                                             contentDescription = "Copy",
                                             tint = ColorMuted,
                                             modifier = Modifier
-                                                .size(16.dp)
+                                                .size(14.dp)
                                                 .clickable { onCopy(item.text) }
                                         )
                                         Box {
@@ -681,7 +866,7 @@ private fun CardRecentDictations(
                                                 contentDescription = "More",
                                                 tint = ColorMuted,
                                                 modifier = Modifier
-                                                    .size(16.dp)
+                                                    .size(14.dp)
                                                     .clickable { menuOpen = true }
                                             )
                                             DropdownMenu(
@@ -720,12 +905,12 @@ private fun CardAccuracyTeaser() {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(ColorCardBg)
-            .border(1.dp, ColorBorder, RoundedCornerShape(16.dp))
-            .padding(14.dp)
+            .border(1.dp, ColorBorder, RoundedCornerShape(14.dp))
+            .padding(10.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -733,7 +918,7 @@ private fun CardAccuracyTeaser() {
             ) {
                 Text(
                     text = "ACCURACY (SOON)",
-                    fontSize = 8.5.sp,
+                    fontSize = 7.5.sp,
                     fontFamily = FontFamily.Monospace,
                     color = ColorSubtle
                 )
@@ -741,22 +926,22 @@ private fun CardAccuracyTeaser() {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 DotMatrixText(
                     text = "--",
-                    dotSize = 2.2.dp,
-                    dotSpacing = 0.7.dp,
-                    charSpacing = 1.2.dp,
+                    dotSize = 1.8.dp,
+                    dotSpacing = 0.6.dp,
+                    charSpacing = 1.0.dp,
                     color = ColorRedAccent
                 )
                 DotMatrixText(
                     text = "%",
-                    dotSize = 2.2.dp,
-                    dotSpacing = 0.7.dp,
-                    charSpacing = 1.2.dp,
+                    dotSize = 1.8.dp,
+                    dotSpacing = 0.6.dp,
+                    charSpacing = 1.0.dp,
                     color = ColorRedAccent
                 )
             }
             Text(
                 text = "Transcription accuracy",
-                fontSize = 10.5.sp,
+                fontSize = 9.5.sp,
                 color = ColorSubtle
             )
         }
@@ -768,12 +953,12 @@ private fun CardProductivityTeaser() {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(ColorCardBg)
-            .border(1.dp, ColorBorder, RoundedCornerShape(16.dp))
-            .padding(14.dp)
+            .border(1.dp, ColorBorder, RoundedCornerShape(14.dp))
+            .padding(10.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -781,21 +966,21 @@ private fun CardProductivityTeaser() {
             ) {
                 Text(
                     text = "PRODUCTIVITY (SOON)",
-                    fontSize = 8.5.sp,
+                    fontSize = 7.5.sp,
                     fontFamily = FontFamily.Monospace,
                     color = ColorSubtle
                 )
             }
             DotMatrixText(
                 text = "--",
-                dotSize = 2.2.dp,
-                dotSpacing = 0.7.dp,
-                charSpacing = 1.2.dp,
+                dotSize = 1.8.dp,
+                dotSpacing = 0.6.dp,
+                charSpacing = 1.0.dp,
                 color = Color.White
             )
             Text(
                 text = "Words per session",
-                fontSize = 10.5.sp,
+                fontSize = 9.5.sp,
                 color = ColorSubtle
             )
         }

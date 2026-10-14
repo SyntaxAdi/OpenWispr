@@ -11,6 +11,7 @@ import android.text.TextUtils
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -31,6 +32,7 @@ import com.openwispr.data.HistoryRepository
 import com.openwispr.data.SettingsRepository
 import com.openwispr.ui.HistoryScreen
 import com.openwispr.ui.HomeScreen
+import com.openwispr.ui.InteractiveDrawer
 import com.openwispr.ui.NavTab
 import com.openwispr.ui.SettingsScreen
 import kotlinx.coroutines.launch
@@ -45,6 +47,7 @@ class MainActivity : ComponentActivity() {
     private val notifPerm = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         settings = SettingsRepository(applicationContext)
         groq = GroqRepository()
@@ -59,109 +62,116 @@ class MainActivity : ComponentActivity() {
                     onPrimary = Color.White
                 )
             ) {
-                val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-                val scope = rememberCoroutineScope()
+                var isDrawerOpen by remember { mutableStateOf(false) }
                 var currentTab by remember { mutableStateOf(NavTab.Home) }
 
-                ModalNavigationDrawer(
-                    drawerState = drawerState,
+                InteractiveDrawer(
+                    isOpen = isDrawerOpen,
+                    onOpen = { isDrawerOpen = true },
+                    onClose = { isDrawerOpen = false },
+                    drawerWidth = 280.dp,
                     drawerContent = {
-                        ModalDrawerSheet(
-                            modifier = Modifier.width(280.dp),
-                            drawerContainerColor = Color(0xFF0E0F14)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color(0xFF0E0F14))
+                                .statusBarsPadding()
+                                .navigationBarsPadding()
                         ) {
-                            // Drawer Header
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 20.dp, vertical = 24.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            Column {
+                                // Drawer Header
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 20.dp, vertical = 24.dp)
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(42.dp)
-                                            .background(
-                                                color = Color(0xFF1E2028),
-                                                shape = RoundedCornerShape(12.dp)
-                                            ),
-                                        contentAlignment = Alignment.Center
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
-                                        Icon(
-                                            painter = painterResource(R.drawable.ic_mic),
-                                            contentDescription = null,
-                                            tint = Color(0xFFFF2E2E),
-                                            modifier = Modifier.size(22.dp)
-                                        )
-                                    }
-                                    Column {
-                                        Text(
-                                            text = "Open Wispr",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White
-                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .size(42.dp)
+                                                .background(
+                                                    color = Color(0xFF1E2028),
+                                                    shape = RoundedCornerShape(12.dp)
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_mic),
+                                                contentDescription = null,
+                                                tint = Color(0xFFFF2E2E),
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                        }
+                                        Column {
+                                            Text(
+                                                text = "Open Wispr",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
                                     }
                                 }
+
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                                    color = Color(0xFF1E2028)
+                                )
+
+                                Spacer(Modifier.height(8.dp))
+
+                                // Navigation Items
+                                NavigationDrawerItem(
+                                    label = { Text("Home", fontWeight = FontWeight.SemiBold) },
+                                    selected = currentTab == NavTab.Home,
+                                    onClick = {
+                                        currentTab = NavTab.Home
+                                        isDrawerOpen = false
+                                    },
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = NavigationDrawerItemDefaults.colors(
+                                        selectedContainerColor = Color(0xFF1E2028),
+                                        selectedTextColor = Color(0xFFFF2E2E),
+                                        unselectedTextColor = Color(0xFFD1D5DB)
+                                    )
+                                )
+
+                                NavigationDrawerItem(
+                                    label = { Text("History", fontWeight = FontWeight.SemiBold) },
+                                    selected = currentTab == NavTab.History,
+                                    onClick = {
+                                        currentTab = NavTab.History
+                                        isDrawerOpen = false
+                                    },
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = NavigationDrawerItemDefaults.colors(
+                                        selectedContainerColor = Color(0xFF1E2028),
+                                        selectedTextColor = Color(0xFFFF2E2E),
+                                        unselectedTextColor = Color(0xFFD1D5DB)
+                                    )
+                                )
+
+                                NavigationDrawerItem(
+                                    label = { Text("Settings", fontWeight = FontWeight.SemiBold) },
+                                    selected = currentTab == NavTab.Settings,
+                                    onClick = {
+                                        currentTab = NavTab.Settings
+                                        isDrawerOpen = false
+                                    },
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = NavigationDrawerItemDefaults.colors(
+                                        selectedContainerColor = Color(0xFF1E2028),
+                                        selectedTextColor = Color(0xFFFF2E2E),
+                                        unselectedTextColor = Color(0xFFD1D5DB)
+                                    )
+                                )
                             }
-
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                                color = Color(0xFF1E2028)
-                            )
-
-                            Spacer(Modifier.height(8.dp))
-
-                            // Navigation Items
-                            NavigationDrawerItem(
-                                label = { Text("Home", fontWeight = FontWeight.SemiBold) },
-                                selected = currentTab == NavTab.Home,
-                                onClick = {
-                                    currentTab = NavTab.Home
-                                    scope.launch { drawerState.close() }
-                                },
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = NavigationDrawerItemDefaults.colors(
-                                    selectedContainerColor = Color(0xFF1E2028),
-                                    selectedTextColor = Color(0xFFFF2E2E),
-                                    unselectedTextColor = Color(0xFFD1D5DB)
-                                )
-                            )
-
-                            NavigationDrawerItem(
-                                label = { Text("History", fontWeight = FontWeight.SemiBold) },
-                                selected = currentTab == NavTab.History,
-                                onClick = {
-                                    currentTab = NavTab.History
-                                    scope.launch { drawerState.close() }
-                                },
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = NavigationDrawerItemDefaults.colors(
-                                    selectedContainerColor = Color(0xFF1E2028),
-                                    selectedTextColor = Color(0xFFFF2E2E),
-                                    unselectedTextColor = Color(0xFFD1D5DB)
-                                )
-                            )
-
-                            NavigationDrawerItem(
-                                label = { Text("Settings", fontWeight = FontWeight.SemiBold) },
-                                selected = currentTab == NavTab.Settings,
-                                onClick = {
-                                    currentTab = NavTab.Settings
-                                    scope.launch { drawerState.close() }
-                                },
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = NavigationDrawerItemDefaults.colors(
-                                    selectedContainerColor = Color(0xFF1E2028),
-                                    selectedTextColor = Color(0xFFFF2E2E),
-                                    unselectedTextColor = Color(0xFFD1D5DB)
-                                )
-                            )
                         }
                     }
                 ) {
@@ -173,7 +183,7 @@ class MainActivity : ComponentActivity() {
                         when (currentTab) {
                             NavTab.Home, NavTab.Stats -> HomeScreen(
                                 historyRepo = history,
-                                onOpenDrawer = { scope.launch { drawerState.open() } },
+                                onOpenDrawer = { isDrawerOpen = true },
                                 onNavigateToHistory = { currentTab = NavTab.History }
                             )
                             NavTab.History -> HistoryScreen(
@@ -191,7 +201,7 @@ class MainActivity : ComponentActivity() {
                                 hasMicPermission = { hasMicPermission() },
                                 canDrawOverlays = { Settings.canDrawOverlays(this@MainActivity) },
                                 hasNotifPermission = { hasNotifPermission() },
-                                onOpenDrawer = { scope.launch { drawerState.open() } }
+                                onOpenDrawer = { isDrawerOpen = true }
                             )
                         }
                     }

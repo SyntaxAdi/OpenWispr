@@ -65,6 +65,9 @@ fun HistoryScreen(
         groupTranscriptsByDate(transcripts)
     }
 
+    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -74,7 +77,7 @@ fun HistoryScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 14.dp),
-            contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp),
+            contentPadding = PaddingValues(top = topInset + 16.dp, bottom = bottomInset + 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Top Header

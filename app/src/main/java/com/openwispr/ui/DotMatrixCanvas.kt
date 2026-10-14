@@ -12,9 +12,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 
 /**
  * 5x7 Dot-matrix font glyph bitmasks.
@@ -79,7 +81,7 @@ object DotMatrixFont {
         'm' to intArrayOf(0b00000, 0b00000, 0b11010, 0b10101, 0b10101, 0b10101, 0b10001),
         'n' to intArrayOf(0b00000, 0b00000, 0b10110, 0b11001, 0b10001, 0b10001, 0b10001),
         'o' to intArrayOf(0b00000, 0b00000, 0b01110, 0b10001, 0b10001, 0b10001, 0b01110),
-        'p' to intArrayOf(0b00000, 0b10110, 0b11001, 0b10001, 0b11110, 0b10000, 0b10000),
+        'p' to intArrayOf(0b00000, 0b00000, 0b11110, 0b10001, 0b11110, 0b10000, 0b10000),
         'q' to intArrayOf(0b00000, 0b01101, 0b10011, 0b10001, 0b01111, 0b00001, 0b00001),
         'r' to intArrayOf(0b00000, 0b00000, 0b10110, 0b11001, 0b10000, 0b10000, 0b10000),
         's' to intArrayOf(0b00000, 0b00000, 0b01111, 0b10000, 0b01110, 0b00001, 0b11110),
@@ -96,6 +98,7 @@ object DotMatrixFont {
         '%' to intArrayOf(0b11001, 0b11010, 0b00100, 0b01000, 0b10011, 0b00011, 0b00000),
         ':' to intArrayOf(0b00000, 0b00100, 0b00000, 0b00000, 0b00100, 0b00000, 0b00000),
         '.' to intArrayOf(0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00100, 0b00100),
+        ',' to intArrayOf(0b00000, 0b00000, 0b00000, 0b00000, 0b00100, 0b00100, 0b01000),
         ' ' to intArrayOf(0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000)
     )
 
@@ -118,11 +121,14 @@ fun DotMatrixText(
 
     // 5 dots wide, 7 dots high per character
     val charWidthDp = dotSize * 5 + dotSpacing * 4
-    val totalWidthDp = if (chars.isEmpty()) 0.dp else (charWidthDp * chars.size + charSpacing * (chars.size - 1))
+    val spaceWidthDp = dotSize * 2.5f + dotSpacing * 1.5f
+    val totalWidthDp = chars.fold(0.dp) { acc, c ->
+        acc + if (c == ' ') spaceWidthDp + charSpacing else charWidthDp + charSpacing
+    } - if (chars.isNotEmpty()) charSpacing else 0.dp
     val totalHeightDp = dotSize * 7 + dotSpacing * 6
 
     Canvas(
-        modifier = modifier.size(width = totalWidthDp, height = totalHeightDp)
+        modifier = modifier.size(width = totalWidthDp.coerceAtLeast(0.dp), height = totalHeightDp)
     ) {
         val dSize = dotSize.toPx()
         val dSpacing = dotSpacing.toPx()
@@ -133,6 +139,11 @@ fun DotMatrixText(
         var startX = 0f
 
         chars.forEach { ch ->
+            if (ch == ' ') {
+                startX += (step * 2.5f) + cSpacing
+                return@forEach
+            }
+
             val rows = DotMatrixFont.getRows(ch)
             for (row in 0 until 7) {
                 val mask = rows[row]
@@ -174,7 +185,8 @@ fun DotWeeklyEqualizer(
         6 to "SAT",
         7 to "SUN"
     )
-    val maxCount = (dayWordCounts.values.maxOrNull() ?: 1L).coerceAtLeast(100L).toFloat()
+    val maxCount = (dayWordCounts.values.maxOrNull() ?: 0L).toFloat()
+    val peakDay = dayWordCounts.filter { it.value > 0 }.maxByOrNull { it.value }?.key
     val colHeight = dotSize * maxDots + dotSpacing * (maxDots - 1)
 
     Row(
@@ -184,10 +196,10 @@ fun DotWeeklyEqualizer(
     ) {
         dayLabels.forEach { (dayIndex, dayLabel) ->
             val count = dayWordCounts[dayIndex] ?: 0L
-            val litCount = if (count > 0) {
+            val litCount = if (count > 0 && maxCount > 0) {
                 ((count / maxCount) * maxDots).toInt().coerceIn(1, maxDots)
             } else {
-                if (dayIndex == 5 || dayIndex == 6) 6 else 2 // aesthetic fallback bars
+                0
             }
 
             Column(
@@ -206,7 +218,7 @@ fun DotWeeklyEqualizer(
                         val rowFromTop = maxDots - 1 - rowFromBottom
                         val cy = rowFromTop * step + radius
                         val isLit = rowFromBottom < litCount
-                        val isPeak = rowFromBottom >= (maxDots - 3) && (dayIndex == 5 || dayIndex == 6)
+                        val isPeak = isLit && (dayIndex == peakDay) && rowFromBottom >= (litCount - 2)
 
                         if (isLit) {
                             val dotColor = if (isPeak) Color(0xFFFF2E2E) else Color.White
@@ -239,34 +251,233 @@ fun DotWeeklyEqualizer(
 }
 
 /**
- * 4x4 matrix for Card 03 (Apps Tracked) with active green LED dots
+ * 24-Hour Activity Timeline graph for Card 01 (12 AM, 6 AM, 12 PM, 6 PM, 12 AM)
+ * Renders full-width LED dot-matrix activity distribution, peak red apex highlights, and axis ticks.
  */
 @Composable
-fun DotAppMatrix(
-    activeCount: Int,
+fun DotHourlyTimelineGraph(
+    hourlyActivityCounts: Map<Int, Long>, // 0..23 hours
+    modifier: Modifier = Modifier,
+    dotSize: Dp = 2.4.dp,
+    dotSpacing: Dp = 1.4.dp,
+    maxDots: Int = 6
+) {
+    val maxCount = (hourlyActivityCounts.values.maxOrNull() ?: 0L).toFloat()
+    val peakHour = if (hourlyActivityCounts.values.any { it > 0 }) {
+        hourlyActivityCounts.maxByOrNull { it.value }?.key
+    } else {
+        null
+    }
+
+    Column(modifier = modifier) {
+        // Section Subheader Row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "HOURLY ACTIVITY DISTRIBUTION",
+                fontSize = 7.5.sp,
+                fontFamily = FontFamily.Monospace,
+                color = Color(0xFF6B7280),
+                letterSpacing = 0.8.sp
+            )
+            Text(
+                text = "24-HOUR CYCLE",
+                fontSize = 7.5.sp,
+                fontFamily = FontFamily.Monospace,
+                color = Color(0xFF6B7280),
+                letterSpacing = 0.8.sp
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Full-Width Dot Graph & Axis Canvas
+        val graphHeight = dotSize * maxDots + dotSpacing * (maxDots - 1) + 8.dp
+        Canvas(modifier = Modifier.fillMaxWidth().height(graphHeight)) {
+            val dSize = dotSize.toPx()
+            val dSpacing = dotSpacing.toPx()
+            val radius = dSize / 2f
+            val stepY = dSize + dSpacing
+            val numCols = 25
+            val stepX = (size.width - dSize) / (numCols - 1)
+            val axisY = maxDots * stepY + 2f
+
+            for (col in 0 until numCols) {
+                val hr = col % 24
+                val count = hourlyActivityCounts[hr] ?: 0L
+                val litCount = if (count > 0 && maxCount > 0) {
+                    ((count / maxCount) * maxDots).toInt().coerceIn(1, maxDots)
+                } else {
+                    0
+                }
+
+                val cx = col * stepX + radius
+                val isPeakCol = peakHour != null && hr == peakHour
+
+                for (rowFromBottom in 0 until maxDots) {
+                    val rowFromTop = maxDots - 1 - rowFromBottom
+                    val cy = rowFromTop * stepY + radius
+                    val isLit = rowFromBottom < litCount
+                    val isPeakDot = isPeakCol && isLit && (rowFromBottom >= litCount - 2)
+
+                    if (isLit) {
+                        val color = if (isPeakDot) Color(0xFFFF2E2E) else Color.White
+                        drawCircle(color = color, radius = radius, center = Offset(cx, cy))
+                    } else {
+                        drawCircle(color = Color(0x18FFFFFF), radius = radius, center = Offset(cx, cy))
+                    }
+                }
+
+                // Axis tick marks at 0, 6, 12, 18, 24
+                if (col % 6 == 0) {
+                    drawLine(
+                        color = Color(0x66FFFFFF),
+                        start = Offset(cx, axisY),
+                        end = Offset(cx, axisY + 4f),
+                        strokeWidth = 1.2f
+                    )
+                }
+            }
+
+            // Continuous horizontal timeline axis line
+            drawLine(
+                color = Color(0x2BFFFFFF),
+                start = Offset(0f, axisY),
+                end = Offset(size.width, axisY),
+                strokeWidth = 1f
+            )
+        }
+
+        Spacer(modifier = Modifier.height(3.dp))
+
+        // Time Axis Labels Spanning Full Width (12 AM, 6 AM, 12 PM, 6 PM, 12 AM)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            listOf("12 AM", "6 AM", "12 PM", "6 PM", "12 AM").forEach { label ->
+                Text(
+                    text = label,
+                    fontSize = 7.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = Color(0xFF6B7280)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 4x4 matrix for Card 03 (Apps Tracked) with active green LED dots
+ */
+/**
+ * Dotted Nothing OS Flame for Card 02 (Week Streak).
+ * Permanent design matching reference mockup with red LED dot matrix silhouette.
+ */
+@Composable
+fun DotMatrixFlame(
     modifier: Modifier = Modifier,
     dotSize: Dp = 2.4.dp,
     dotSpacing: Dp = 1.6.dp
 ) {
-    val totalWidth = dotSize * 4 + dotSpacing * 3
-    val totalHeight = dotSize * 4 + dotSpacing * 3
+    val numCols = 7
+    val numRows = 9
+    val totalWidth = dotSize * numCols + dotSpacing * (numCols - 1)
+    val totalHeight = dotSize * numRows + dotSpacing * (numRows - 1)
+
+    // Flame pattern bitmask (1 = flame dot, 0 = empty)
+    val flameGrid = arrayOf(
+        intArrayOf(0, 0, 0, 1, 0, 0, 0), // Row 0
+        intArrayOf(0, 0, 1, 1, 0, 0, 0), // Row 1
+        intArrayOf(0, 1, 1, 1, 1, 0, 0), // Row 2
+        intArrayOf(0, 1, 1, 1, 1, 1, 0), // Row 3
+        intArrayOf(1, 1, 1, 0, 1, 1, 1), // Row 4
+        intArrayOf(1, 1, 0, 0, 0, 1, 1), // Row 5 (hollow core)
+        intArrayOf(1, 1, 0, 0, 0, 1, 1), // Row 6
+        intArrayOf(0, 1, 1, 0, 1, 1, 0), // Row 7
+        intArrayOf(0, 0, 1, 1, 1, 0, 0)  // Row 8 (base)
+    )
 
     Canvas(modifier = modifier.size(totalWidth, totalHeight)) {
+        val dSize = dotSize.toPx()
+        val dSpacing = dotSpacing.toPx()
+        val radius = dSize / 2f
+        val stepX = dSize + dSpacing
+        val stepY = dSize + dSpacing
+
+        for (row in 0 until numRows) {
+            for (col in 0 until numCols) {
+                if (flameGrid[row][col] == 1) {
+                    val cx = col * stepX + radius
+                    val cy = row * stepY + radius
+                    val color = if (row <= 2) Color(0xFFFF5252) else Color(0xFFFF2E2E)
+                    drawCircle(color = color, radius = radius, center = Offset(cx, cy))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 7x7 App Ecosystem Radar HUD for Card 03 (Apps Tracked).
+ * Permanent high-tech Nothing OS design with corner brackets, concentric ring,
+ * and Emerald Green core + satellite connection nodes.
+ */
+@Composable
+fun DotAppEcosystemRadar(
+    modifier: Modifier = Modifier,
+    dotSize: Dp = 2.2.dp,
+    dotSpacing: Dp = 1.4.dp
+) {
+    val totalSize = dotSize * 7 + dotSpacing * 6
+
+    // 7x7 bitmask pattern
+    val grid = arrayOf(
+        intArrayOf(1, 0, 0, 2, 0, 0, 1), // Row 0: Bracket, Top satellite (Green), Bracket
+        intArrayOf(0, 1, 0, 0, 0, 1, 0), // Row 1: Diagonal guide
+        intArrayOf(0, 0, 3, 3, 3, 0, 0), // Row 2: Concentric ring top
+        intArrayOf(2, 0, 3, 4, 3, 0, 2), // Row 3: Left satellite, ring, Center Core (Green), ring, Right satellite
+        intArrayOf(0, 0, 3, 3, 3, 0, 0), // Row 4: Concentric ring bottom
+        intArrayOf(0, 1, 0, 0, 0, 1, 0), // Row 5: Diagonal guide
+        intArrayOf(1, 0, 0, 2, 0, 0, 1)  // Row 6: Bracket, Bottom satellite, Bracket
+    )
+
+    Canvas(modifier = modifier.size(totalSize)) {
         val dSize = dotSize.toPx()
         val dSpacing = dotSpacing.toPx()
         val radius = dSize / 2f
         val step = dSize + dSpacing
 
-        for (row in 0 until 4) {
-            for (col in 0 until 4) {
+        for (row in 0 until 7) {
+            for (col in 0 until 7) {
                 val cx = col * step + radius
                 val cy = row * step + radius
-                val isActive = (row == 0 && col == 0) || (row == 1 && col == 0 && activeCount >= 2)
+                val type = grid[row][col]
 
-                if (isActive) {
-                    drawCircle(color = Color(0xFF00E676), radius = radius, center = Offset(cx, cy))
-                } else {
-                    drawCircle(color = Color(0x1AFFFFFF), radius = radius, center = Offset(cx, cy))
+                when (type) {
+                    4 -> {
+                        // Center Core LED
+                        drawCircle(color = Color(0xFF00E676), radius = radius * 1.35f, center = Offset(cx, cy))
+                    }
+                    2 -> {
+                        // Cardinal Satellite Connection Nodes
+                        val satColor = if (row == 0 || col == 6) Color(0xFF00E676) else Color(0xFFFF2E2E)
+                        drawCircle(color = satColor, radius = radius * 1.1f, center = Offset(cx, cy))
+                    }
+                    1 -> {
+                        // Corner brackets
+                        drawCircle(color = Color(0xDDFFFFFF), radius = radius, center = Offset(cx, cy))
+                    }
+                    3 -> {
+                        // Concentric ring
+                        drawCircle(color = Color(0x40FFFFFF), radius = radius * 0.9f, center = Offset(cx, cy))
+                    }
+                    else -> {
+                        // Unlit ghost grid
+                        drawCircle(color = Color(0x10FFFFFF), radius = radius * 0.75f, center = Offset(cx, cy))
+                    }
                 }
             }
         }
@@ -274,71 +485,217 @@ fun DotAppMatrix(
 }
 
 /**
- * Waveform dotted apex for Card 04 (Speaking Speed)
+ * Detailed Ascending Cadence Speed Graph for Card 04 (Speaking Speed).
+ * Features upward-moving telemetry trajectory, crest apexes in Signal Red,
+ * and secondary acoustic harmonic echo traces. Compact 36dp width leaves ample
+ * room for 3-digit WPM values.
  */
 @Composable
-fun DotWaveformApex(
+fun DotAscendingCadenceGraph(
     modifier: Modifier = Modifier,
-    dotSize: Dp = 2.dp
+    dotSize: Dp = 2.2.dp
 ) {
-    val totalWidth = 38.dp
-    val totalHeight = 16.dp
+    val totalWidth = 36.dp
+    val totalHeight = 22.dp
 
     Canvas(modifier = modifier.size(totalWidth, totalHeight)) {
         val radius = dotSize.toPx() / 2f
-        val yCoords = listOf(0.8f, 0.7f, 0.55f, 0.4f, 0.2f, 0.35f, 0.55f, 0.7f, 0.8f)
-        val stepX = size.width / (yCoords.size - 1)
+        val numPoints = 8
+        val stepX = size.width / (numPoints - 1)
 
+        // Ascending cadence curve (normalized Y, 0 = top, 1 = bottom)
+        val yCoords = listOf(0.85f, 0.72f, 0.58f, 0.44f, 0.32f, 0.22f, 0.14f, 0.08f)
+
+        // 1. Secondary harmonic echo trace beneath main curve
+        for (i in 1 until numPoints - 1) {
+            val cx = i * stepX
+            val cyEcho = (yCoords[i] + 0.28f).coerceAtMost(0.92f) * size.height
+            drawCircle(color = Color(0x22FFFFFF), radius = radius * 0.8f, center = Offset(cx, cyEcho))
+        }
+
+        // 2. Primary upward-moving telemetry line
         yCoords.forEachIndexed { i, normY ->
             val cx = i * stepX
             val cy = normY * size.height
-            val isApex = i == 4
-            val color = if (isApex) Color(0xFFFF2E2E) else Color(0x66FF2E2E)
-            drawCircle(color = color, radius = if (isApex) radius * 1.3f else radius, center = Offset(cx, cy))
+            val isPeak = i >= 6
+            val isMid = i in 3..5
+
+            val dotColor = when {
+                i == numPoints - 1 -> Color(0xFFFF5252) // Apex top
+                isPeak -> Color(0xFFFF2E2E)            // Rising crest
+                isMid -> Color(0xEEFFFFFF)             // Mid ascent
+                else -> Color(0x55FFFFFF)              // Base trail
+            }
+            val dotR = if (i == numPoints - 1) radius * 1.35f else radius
+            drawCircle(color = dotColor, radius = dotR, center = Offset(cx, cy))
+        }
+
+        // 3. Forward crest apex indicator dot
+        val lastX = (numPoints - 1) * stepX
+        val lastY = yCoords.last() * size.height
+        drawCircle(color = Color(0x88FF2E2E), radius = radius * 0.85f, center = Offset(lastX - stepX * 0.5f, lastY + 5f))
+    }
+}
+
+/**
+ * Dot-matrix display for progressive usage duration (0s, 0m 0s, 1 day, etc.)
+ * Dynamically renders numeric digits in White and unit/time markers in Signal Red.
+ */
+@Composable
+fun DotMatrixUsageDisplay(
+    formattedText: String,
+    modifier: Modifier = Modifier,
+    dotSize: Dp = 1.8.dp,
+    dotSpacing: Dp = 0.6.dp,
+    charSpacing: Dp = 0.8.dp
+) {
+    val tokens = remember(formattedText) {
+        val list = mutableListOf<Pair<String, Boolean>>()
+        val matcher = java.util.regex.Pattern.compile("(\\d+|\\D+)").matcher(formattedText)
+        while (matcher.find()) {
+            val chunk = matcher.group(1) ?: ""
+            val isNum = chunk.all { it.isDigit() }
+            list.add(chunk to isNum)
+        }
+        list
+    }
+
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        tokens.forEach { (chunk, isNum) ->
+            DotMatrixText(
+                text = chunk,
+                dotSize = dotSize,
+                dotSpacing = dotSpacing,
+                charSpacing = charSpacing,
+                color = if (isNum) Color.White else Color(0xFFFF2E2E)
+            )
         }
     }
 }
 
 /**
- * Level meters for Card 05 (Total Usage)
+ * 6-Column High-Density Equalizer Meters for Card 05 (Total Usage).
+ * Features stepped frequency columns, horizontal decibel reference ticks,
+ * and Signal Red overload warning apexes.
  */
 @Composable
 fun DotUsageMeters(
     modifier: Modifier = Modifier,
     dotSize: Dp = 2.2.dp,
-    dotSpacing: Dp = 1.2.dp,
-    numCols: Int = 4,
-    numDots: Int = 8
+    dotSpacing: Dp = 1.3.dp,
+    numCols: Int = 6,
+    numDots: Int = 10
 ) {
-    val totalWidth = dotSize * numCols + dotSpacing * (numCols - 1) * 2.5f
+    val totalWidth = dotSize * numCols + dotSpacing * (numCols - 1) * 2.2f
     val totalHeight = dotSize * numDots + dotSpacing * (numDots - 1)
+    val colHeights = listOf(2, 4, 5, 7, 9, 10)
 
     Canvas(modifier = modifier.size(totalWidth, totalHeight)) {
         val dSize = dotSize.toPx()
         val dSpacing = dotSpacing.toPx()
-        val stepX = dSize + dSpacing * 2.5f
+        val stepX = dSize + dSpacing * 2.2f
         val stepY = dSize + dSpacing
         val radius = dSize / 2f
 
-        val colHeights = listOf(3, 5, 7, 8)
-
         for (col in 0 until numCols) {
             val cx = col * stepX + radius
-            val litLimit = colHeights.getOrElse(col) { 4 }
+            val litCount = colHeights[col]
 
             for (row in 0 until numDots) {
                 val rowFromBottom = numDots - 1 - row
                 val cy = row * stepY + radius
-                val isLit = rowFromBottom < litLimit
-                val isPeak = isLit && (col == numCols - 1)
+                val isLit = rowFromBottom < litCount
+                val isOverloadPeak = isLit && (
+                    (col == numCols - 1 && rowFromBottom >= 6) ||
+                    (col == numCols - 2 && rowFromBottom >= 7)
+                )
 
                 if (isLit) {
-                    val colColor = if (isPeak) Color(0xFFFF2E2E) else Color.White
+                    val colColor = if (isOverloadPeak) Color(0xFFFF2E2E) else Color(0xDDFFFFFF)
                     drawCircle(color = colColor, radius = radius, center = Offset(cx, cy))
                 } else {
-                    drawCircle(color = Color(0x12FFFFFF), radius = radius, center = Offset(cx, cy))
+                    // Ghost grid dot
+                    drawCircle(color = Color(0x15FFFFFF), radius = radius * 0.85f, center = Offset(cx, cy))
+                }
+
+                // Horizontal reference tick at 50% (row 4 from bottom)
+                if (rowFromBottom == 4 && !isLit) {
+                    drawCircle(color = Color(0x35FFFFFF), radius = radius * 0.5f, center = Offset(cx, cy))
                 }
             }
         }
     }
 }
+
+/**
+ * Compact diagonal 8-dot ascending speed streak for Speaking Speed.
+ * Matches Image 2: gently ascending from bottom-left to top-right with
+ * dim white base dots and bright Signal Red apex dots.
+ */
+@Composable
+fun DotSpeedAscentStreak(
+    modifier: Modifier = Modifier,
+    dotSize: Dp = 2.4.dp
+) {
+    val totalWidth = 32.dp
+    val totalHeight = 14.dp
+
+    Canvas(modifier = modifier.size(totalWidth, totalHeight)) {
+        val radius = dotSize.toPx() / 2f
+        val numPoints = 8
+        val stepX = (size.width - radius * 2f) / (numPoints - 1)
+        val stepY = (size.height - radius * 2f) / (numPoints - 1)
+
+        for (i in 0 until numPoints) {
+            val cx = radius + i * stepX
+            val cy = size.height - radius - i * stepY
+            val color = when {
+                i >= 5 -> Color(0xFFFF2E2E) // Bright Signal Red apex
+                i in 3..4 -> Color(0xBBFFFFFF) // Mid white
+                else -> Color(0x55FFFFFF) // Dim white base
+            }
+            drawCircle(color = color, radius = radius, center = Offset(cx, cy))
+        }
+    }
+}
+
+/**
+ * Dual-row dot matrix progress bar for "MOST USED APP".
+ * Renders two horizontal rows of dots spanning across the card width.
+ * Dots up to the given progress percentage are lit with Signal Red,
+ * and the remaining dots are rendered in ghost color.
+ */
+@Composable
+fun DotMatrixDualProgressBar(
+    progress: Float,
+    modifier: Modifier = Modifier,
+    numDots: Int = 22,
+    dotSize: Dp = 2.4.dp,
+    rowSpacing: Dp = 3.dp
+) {
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(dotSize * 2 + rowSpacing)
+    ) {
+        val dSize = dotSize.toPx()
+        val radius = dSize / 2f
+        val rSpacing = rowSpacing.toPx()
+        val activeCount = (progress.coerceIn(0f, 1f) * numDots).roundToInt()
+        val stepX = if (numDots > 1) (size.width - dSize) / (numDots - 1) else 0f
+
+        for (row in 0..1) {
+            val cy = row * (dSize + rSpacing) + radius
+            for (col in 0 until numDots) {
+                val cx = col * stepX + radius
+                val isActive = col < activeCount
+                val color = if (isActive) Color(0xFFFF2E2E) else Color(0x22FFFFFF)
+                drawCircle(color = color, radius = radius, center = Offset(cx, cy))
+            }
+        }
+    }
+}
+
