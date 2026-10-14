@@ -38,7 +38,6 @@ private val ColorDarkBg = Color(0xFF070709)
 private val ColorCardBg = Color(0xFF0E0F14)
 private val ColorBorder = Color(0xFF1E2028)
 private val ColorRedAccent = Color(0xFFFF2E2E)
-private val ColorGreenActive = Color(0xFF00E676)
 private val ColorMuted = Color(0xFF9CA3AF)
 private val ColorSubtle = Color(0xFF6B7280)
 
@@ -46,9 +45,7 @@ private val ColorSubtle = Color(0xFF6B7280)
 fun HomeScreen(
     historyRepo: HistoryRepository,
     onOpenDrawer: () -> Unit,
-    onNavigateToSettings: () -> Unit,
     onNavigateToHistory: () -> Unit,
-    isServiceActive: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -79,15 +76,13 @@ fun HomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 14.dp),
-            contentPadding = PaddingValues(top = 14.dp, bottom = 96.dp),
+            contentPadding = PaddingValues(top = 14.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // 1. Top Header Bar
             item {
                 TopBarHeader(
-                    onOpenDrawer = onOpenDrawer,
-                    onOpenSettings = onNavigateToSettings,
-                    isActive = isServiceActive
+                    onOpenDrawer = onOpenDrawer
                 )
             }
 
@@ -166,9 +161,7 @@ fun HomeScreen(
 
 @Composable
 private fun TopBarHeader(
-    onOpenDrawer: () -> Unit,
-    onOpenSettings: () -> Unit,
-    isActive: Boolean
+    onOpenDrawer: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -195,72 +188,15 @@ private fun TopBarHeader(
             )
         }
 
-        // Center: Dot-Matrix Title & Subtitle
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                DotMatrixText("Open ", dotSize = 2.0.dp, dotSpacing = 0.8.dp, charSpacing = 1.2.dp, color = Color.White)
-                DotMatrixText("Wispr", dotSize = 2.0.dp, dotSpacing = 0.8.dp, charSpacing = 1.2.dp, color = ColorRedAccent)
-            }
-            Spacer(modifier = Modifier.height(3.dp))
-            Text(
-                text = "YOUR AI VOICE COMPANION",
-                fontSize = 7.5.sp,
-                fontFamily = FontFamily.Monospace,
-                color = ColorSubtle,
-                letterSpacing = 1.2.sp
-            )
+        // Center: Dot-Matrix Title
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            DotMatrixText("Open ", dotSize = 2.4.dp, dotSpacing = 0.9.dp, charSpacing = 1.4.dp, color = Color.White)
+            DotMatrixText("Wispr", dotSize = 2.4.dp, dotSpacing = 0.9.dp, charSpacing = 1.4.dp, color = ColorRedAccent)
         }
 
-        // Right: ACTIVE pill & Settings button
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            // Status Pill
-            Row(
-                modifier = Modifier
-                    .height(32.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(ColorCardBg)
-                    .border(1.dp, ColorBorder, RoundedCornerShape(16.dp))
-                    .padding(horizontal = 9.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(5.dp)
-                        .background(if (isActive) ColorGreenActive else ColorRedAccent, CircleShape)
-                )
-                Text(
-                    text = if (isActive) "ACTIVE" else "OFFLINE",
-                    fontSize = 9.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    letterSpacing = 0.8.sp
-                )
-            }
-
-            // Settings Button
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                .background(ColorCardBg)
-                .border(1.dp, ColorBorder, RoundedCornerShape(10.dp))
-                .clickable { onOpenSettings() },
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_settings),
-                contentDescription = "Settings",
-                tint = Color.White,
-                modifier = Modifier.size(17.dp)
-            )
-        }
+        // Right spacer to keep title centered
+        Spacer(modifier = Modifier.size(38.dp))
     }
-}
 }
 
 @Composable
@@ -281,7 +217,7 @@ private fun CardTotalWordsSpoken(stats: HomeStats) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "01 — TOTAL WORDS SPOKEN",
+                    text = "TOTAL WORDS SPOKEN",
                     fontSize = 10.5.sp,
                     fontFamily = FontFamily.Monospace,
                     color = ColorMuted,
@@ -354,7 +290,7 @@ private fun CardWeekStreak(stats: HomeStats) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "02 — WEEK STREAK",
+                    text = "WEEK STREAK",
                     fontSize = 9.sp,
                     fontFamily = FontFamily.Monospace,
                     color = ColorMuted
@@ -440,7 +376,7 @@ private fun CardAppsTracked(stats: HomeStats) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "03 — APPS TRACKED",
+                    text = "APPS TRACKED",
                     fontSize = 9.sp,
                     fontFamily = FontFamily.Monospace,
                     color = ColorMuted
@@ -494,7 +430,7 @@ private fun CardSpeakingSpeed(stats: HomeStats) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "04 — SPEAKING SPEED",
+                    text = "SPEAKING SPEED",
                     fontSize = 8.5.sp,
                     fontFamily = FontFamily.Monospace,
                     color = ColorMuted
@@ -558,7 +494,7 @@ private fun CardTotalUsage(stats: HomeStats) {
                         modifier = Modifier.size(11.dp)
                     )
                     Text(
-                        text = "05 TOTAL USAGE",
+                        text = "TOTAL USAGE",
                         fontSize = 8.5.sp,
                         fontFamily = FontFamily.Monospace,
                         color = ColorMuted
@@ -618,7 +554,7 @@ private fun CardRecentDictations(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "06 — RECENT DICTATIONS",
+                    text = "RECENT DICTATIONS",
                     fontSize = 10.5.sp,
                     fontFamily = FontFamily.Monospace,
                     color = ColorMuted,
@@ -796,7 +732,7 @@ private fun CardAccuracyTeaser() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "07 ACCURACY (SOON)",
+                    text = "ACCURACY (SOON)",
                     fontSize = 8.5.sp,
                     fontFamily = FontFamily.Monospace,
                     color = ColorSubtle
@@ -844,7 +780,7 @@ private fun CardProductivityTeaser() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "08 PRODUCTIVITY (SOON)",
+                    text = "PRODUCTIVITY (SOON)",
                     fontSize = 8.5.sp,
                     fontFamily = FontFamily.Monospace,
                     color = ColorSubtle

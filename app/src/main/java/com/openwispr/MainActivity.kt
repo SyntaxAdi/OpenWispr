@@ -29,7 +29,6 @@ import androidx.core.content.ContextCompat
 import com.openwispr.data.GroqRepository
 import com.openwispr.data.HistoryRepository
 import com.openwispr.data.SettingsRepository
-import com.openwispr.ui.BottomNavDock
 import com.openwispr.ui.HistoryScreen
 import com.openwispr.ui.HomeScreen
 import com.openwispr.ui.NavTab
@@ -104,12 +103,6 @@ class MainActivity : ComponentActivity() {
                                             fontWeight = FontWeight.Bold,
                                             color = Color.White
                                         )
-                                        Text(
-                                            text = "YOUR AI VOICE COMPANION",
-                                            fontSize = 9.sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = Color(0xFF9CA3AF)
-                                        )
                                     }
                                 }
                             }
@@ -181,9 +174,7 @@ class MainActivity : ComponentActivity() {
                             NavTab.Home, NavTab.Stats -> HomeScreen(
                                 historyRepo = history,
                                 onOpenDrawer = { scope.launch { drawerState.open() } },
-                                onNavigateToSettings = { currentTab = NavTab.Settings },
-                                onNavigateToHistory = { currentTab = NavTab.History },
-                                isServiceActive = isAccessibilityEnabled()
+                                onNavigateToHistory = { currentTab = NavTab.History }
                             )
                             NavTab.History -> HistoryScreen(
                                 historyRepo = history,
@@ -203,22 +194,6 @@ class MainActivity : ComponentActivity() {
                                 onOpenDrawer = { scope.launch { drawerState.open() } }
                             )
                         }
-
-                        // Bottom Navigation Dock
-                        BottomNavDock(
-                            currentTab = currentTab,
-                            onTabSelected = { currentTab = it },
-                            onMicClick = {
-                                if (!hasMicPermission()) {
-                                    requestMic()
-                                } else if (!isAccessibilityEnabled()) {
-                                    openAccessibility()
-                                } else {
-                                    Toast.makeText(this@MainActivity, "Open Wispr is active. Tap any text field to speak.", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            modifier = Modifier.align(Alignment.BottomCenter)
-                        )
                     }
                 }
             }
