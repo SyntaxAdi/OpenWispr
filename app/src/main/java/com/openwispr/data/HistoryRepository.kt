@@ -44,7 +44,7 @@ data class HomeStats(
 class HistoryRepository(private val context: Context) {
     private val dbHelper = HistoryDatabaseHelper(context.applicationContext)
 
-    private val _dataUpdates = MutableSharedFlow<Unit>(replay = 0, extraBufferCapacity = 1)
+    private val _dataUpdates = MutableSharedFlow<Unit>(replay = 1, extraBufferCapacity = 1)
     val dataUpdates: SharedFlow<Unit> = _dataUpdates.asSharedFlow()
 
     suspend fun insertTranscript(text: String, appPackage: String, durationMs: Long): Long = withContext(Dispatchers.IO) {

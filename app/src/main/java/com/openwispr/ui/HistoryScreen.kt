@@ -53,8 +53,8 @@ fun HistoryScreen(
     var transcripts by remember { mutableStateOf<List<TranscriptRecord>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
 
-    LaunchedEffect(Unit) {
-        historyRepo.dataUpdates.collect {
+    fun refresh() {
+        scope.launch {
             try {
                 transcripts = historyRepo.getAllTranscripts()
             } catch (e: Exception) {
@@ -62,6 +62,13 @@ fun HistoryScreen(
             } finally {
                 isLoading = false
             }
+        }
+    }
+
+    LaunchedEffect(historyRepo) {
+        refresh()
+        historyRepo.dataUpdates.collect {
+            refresh()
         }
     }
 
@@ -123,7 +130,7 @@ fun HistoryScreen(
                         )
                     }
                     Text(
-                        text = "${transcripts.size} records",
+                        text = if (isLoading) "Loading..." else "${transcripts.size} records",
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
                         color = ColorSubtle
@@ -131,7 +138,22 @@ fun HistoryScreen(
                 }
             }
 
-            if (!isLoading && transcripts.isEmpty()) {
+            if (isLoading) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 40.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = ColorRedAccent,
+                            strokeWidth = 2.dp
+                        )
+                    }
+                }
+            } else if (transcripts.isEmpty()) {
                 item {
                     Box(
                         modifier = Modifier
@@ -167,42 +189,125 @@ fun HistoryScreen(
                 }
 
                 items(itemsForDate, key = { it.id }) { item ->
-                    var menuOpen by remember { mutableStateOf(false) }
                     val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
+                    val appDisplayName = remember(item.appPackage) {
+                        if (item.appPackage.isBlank() || item.appPackage == "unknown") {
+                            "SYSTEM"
+                        } else {
+                            val pm = context.packageManager
+                            try {
+                                val appInfo = pm.getApplicationInfo(item.appPackage, 0)
+                                pm.getApplicationLabel(appInfo).toString().uppercase()
+                            } catch (_: Exception) {
+                                item.appPackage.substringAfterLast('.').uppercase()
+                            }
+                        }
+                    }
 
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
+                            .clip(RoundedCornerShape(12.dp))
                             .background(ColorCardBg)
-                            .border(1.dp, ColorBorder, RoundedCornerShape(14.dp))
-                            .padding(14.dp)
+                            .border(1.dp, ColorBorder, RoundedCornerShape(12.dp))
+                            .padding(12.dp)
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(
-                                text = item.text,
-                                fontSize = 13.5.sp,
-                                color = Color.White,
-                                lineHeight = 19.sp
-                            )
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Top Row: App Label + Word Count Badge + Timestamp
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = appDisplayName,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = Color.White,
+                                        letterSpacing = 0.5.sp
+                                    )
+
+                                    if (item.wordCount > 0) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(Color(0xFF1A1B22))
+                                                .border(0.6.dp, ColorBorder, RoundedCornerShape(4.dp))
+                                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                                        ) {
+                                            Text(
+                                                text = "${item.wordCount} WORDS",
+                                                fontSize = 7.5.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = ColorRedAccent,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    }
+                                }
+
                                 Text(
                                     text = timeFormat.format(Date(item.timestampMs)),
-                                    fontSize = 10.sp,
+                                    fontSize = 8.5.sp,
                                     fontFamily = FontFamily.Monospace,
                                     color = ColorSubtle
                                 )
-                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.ic_copy),
-                                        contentDescription = "Copy",
-                                        tint = ColorMuted,
+                            }
+
+                            // Dictation Text with Left Red Rail Guide
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(2.dp)
+                                        .height(30.dp)
+                                        .clip(RoundedCornerShape(1.dp))
+                                        .background(ColorRedAccent.copy(alpha = 0.5f))
+                                )
+
+                                Text(
+                                    text = item.text,
+                                    fontSize = 12.5.sp,
+                                    color = Color.White,
+                                    lineHeight = 17.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+
+                            // Bottom Micro-Actions Bar: Duration & Direct Copy / Delete Pills
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val durationSec = if (item.durationMs > 0) item.durationMs / 1000f else 0f
+                                Text(
+                                    text = if (durationSec > 0) "// AUDIO: ${"%.1f".format(durationSec)}S" else "// DIRECT INJECT",
+                                    fontSize = 8.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = ColorSubtle
+                                )
+
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Copy Pill
+                                    Box(
                                         modifier = Modifier
-                                            .size(16.dp)
+                                            .clip(RoundedCornerShape(5.dp))
+                                            .background(Color(0xFF14151C))
+                                            .border(0.8.dp, ColorBorder, RoundedCornerShape(5.dp))
                                             .clickable {
                                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                                 val clip = ClipData.newPlainText("Transcription", item.text).apply {
@@ -217,41 +322,65 @@ fun HistoryScreen(
                                                     Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
                                                 }
                                             }
-                                    )
-                                    Box {
-                                        Icon(
-                                            painter = painterResource(R.drawable.ic_more_vert),
-                                            contentDescription = "Options",
-                                            tint = ColorMuted,
-                                            modifier = Modifier
-                                                .size(16.dp)
-                                                .clickable { menuOpen = true }
-                                        )
-                                        DropdownMenu(
-                                            expanded = menuOpen,
-                                            onDismissRequest = { menuOpen = false }
+                                            .padding(horizontal = 7.dp, vertical = 3.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            DropdownMenuItem(
-                                                text = { Text("Delete", color = ColorRedAccent) },
-                                                leadingIcon = {
-                                                    Icon(
-                                                        painter = painterResource(R.drawable.ic_delete),
-                                                        contentDescription = null,
-                                                        tint = ColorRedAccent
-                                                    )
-                                                },
-                                                onClick = {
-                                                    menuOpen = false
-                                                    scope.launch {
-                                                        try {
-                                                            historyRepo.deleteTranscript(item.id)
-                                                            Toast.makeText(context, "Deleted", Toast.LENGTH_SHORT).show()
-                                                        } catch (e: Exception) {
-                                                            e.printStackTrace()
-                                                            Toast.makeText(context, "Delete failed", Toast.LENGTH_SHORT).show()
-                                                        }
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_copy),
+                                                contentDescription = "Copy transcription",
+                                                tint = ColorMuted,
+                                                modifier = Modifier.size(11.dp)
+                                            )
+                                            Text(
+                                                text = "COPY",
+                                                fontSize = 8.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold,
+                                                color = ColorMuted
+                                            )
+                                        }
+                                    }
+
+                                    // Delete Pill
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(5.dp))
+                                            .background(Color(0xFF1E1418))
+                                            .border(0.8.dp, ColorRedAccent.copy(alpha = 0.5f), RoundedCornerShape(5.dp))
+                                            .clickable {
+                                                scope.launch {
+                                                    try {
+                                                        historyRepo.deleteTranscript(item.id)
+                                                        Toast.makeText(context, "Deleted", Toast.LENGTH_SHORT).show()
+                                                    } catch (e: Exception) {
+                                                        e.printStackTrace()
+                                                        Toast.makeText(context, "Delete failed", Toast.LENGTH_SHORT).show()
                                                     }
                                                 }
+                                            }
+                                            .padding(horizontal = 7.dp, vertical = 3.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_delete),
+                                                contentDescription = "Delete transcription",
+                                                tint = ColorRedAccent,
+                                                modifier = Modifier.size(11.dp)
+                                            )
+                                            Text(
+                                                text = "DELETE",
+                                                fontSize = 8.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold,
+                                                color = ColorRedAccent
                                             )
                                         }
                                     }

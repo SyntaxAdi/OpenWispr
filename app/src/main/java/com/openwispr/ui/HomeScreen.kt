@@ -29,6 +29,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.animation.core.*
@@ -773,37 +774,70 @@ private fun CardRecentDictations(
             .padding(12.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            // Header Row
+            // Header Row: Red LED dot + Telemetry title + VIEW ALL action pill
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "RECENT DICTATIONS",
-                    fontSize = 9.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = ColorMuted,
-                    letterSpacing = 0.5.sp
-                )
-                Text(
-                    text = "View All →",
-                    fontSize = 9.5.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    modifier = Modifier.clickable { onViewAll() }
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(ColorRedAccent)
+                    )
+                    Text(
+                        text = "RECENT DICTATIONS",
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        letterSpacing = 0.8.sp
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF14151C))
+                        .border(0.8.dp, ColorBorder, RoundedCornerShape(6.dp))
+                        .clickable { onViewAll() }
+                        .padding(horizontal = 8.dp, vertical = 3.5.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "VIEW ALL",
+                            fontSize = 8.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            letterSpacing = 0.5.sp
+                        )
+                        Text(
+                            text = "→",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = ColorRedAccent
+                        )
+                    }
+                }
             }
 
             if (transcripts.isEmpty()) {
-                // Exact Empty State from Screenshot - Modern Compact Proportions
+                // Nothing OS Telemetry Empty State
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 12.dp),
+                        .padding(vertical = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Box(
                         modifier = Modifier.size(54.dp),
@@ -812,13 +846,13 @@ private fun CardRecentDictations(
                         Box(
                             modifier = Modifier
                                 .size(36.dp, 44.dp)
-                                .border(1.dp, Color(0x66FFFFFF), RoundedCornerShape(6.dp))
+                                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(6.dp))
                                 .padding(6.dp)
                         ) {
                             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Box(modifier = Modifier.size(14.dp, 1.5.dp).background(Color(0x66FFFFFF)))
-                                Box(modifier = Modifier.size(18.dp, 1.5.dp).background(Color(0x66FFFFFF)))
-                                Box(modifier = Modifier.size(10.dp, 1.5.dp).background(Color(0x66FFFFFF)))
+                                Box(modifier = Modifier.size(14.dp, 1.5.dp).background(Color(0x44FFFFFF)))
+                                Box(modifier = Modifier.size(18.dp, 1.5.dp).background(Color(0x44FFFFFF)))
+                                Box(modifier = Modifier.size(10.dp, 1.5.dp).background(Color(0x44FFFFFF)))
                             }
                         }
 
@@ -827,7 +861,7 @@ private fun CardRecentDictations(
                                 .align(Alignment.BottomEnd)
                                 .size(22.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF1C1D24))
+                                .background(Color(0xFF14151C))
                                 .border(1.dp, ColorRedAccent, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
@@ -840,106 +874,255 @@ private fun CardRecentDictations(
                         }
                     }
 
-                    Text(
-                        text = "No dictations yet",
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-
-                    Text(
-                        text = "Tap the floating bubble in any text field to dictate.\nYour transcription history and speech metrics\nwill appear here.",
-                        fontSize = 9.5.sp,
-                        color = ColorMuted,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 13.5.sp
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            text = "NO DICTATIONS LOGGED",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color.White,
+                            letterSpacing = 0.5.sp
+                        )
+                        Text(
+                            text = "Focus any text field to dictate. Transcripts appear here live.",
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = ColorMuted,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             } else {
-                val context = LocalContext.current
                 val recent = transcripts.take(2)
-                val timeFormat = remember(context) { android.text.format.DateFormat.getTimeFormat(context) }
-
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     recent.forEach { item ->
                         key(item.id) {
-                            var menuOpen by remember { mutableStateOf(false) }
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xFF14151C))
-                                    .border(1.dp, Color(0xFF262832), RoundedCornerShape(10.dp))
-                                    .padding(10.dp)
-                            ) {
-                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text(
-                                        text = item.text,
-                                        fontSize = 11.5.sp,
-                                        color = Color.White,
-                                        lineHeight = 15.sp
-                                    )
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = timeFormat.format(Date(item.timestampMs)),
-                                            fontSize = 9.sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = ColorSubtle
-                                        )
-                                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(28.dp)
-                                                    .clickable { onCopy(item.text) },
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    painter = painterResource(R.drawable.ic_copy),
-                                                    contentDescription = "Copy transcription",
-                                                    tint = ColorMuted,
-                                                    modifier = Modifier.size(15.dp)
-                                                )
-                                            }
-                                            Box(
-                                                modifier = Modifier.size(28.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    painter = painterResource(R.drawable.ic_more_vert),
-                                                    contentDescription = "More actions",
-                                                    tint = ColorMuted,
-                                                    modifier = Modifier
-                                                        .size(15.dp)
-                                                        .clickable { menuOpen = true }
-                                                )
-                                                DropdownMenu(
-                                                    expanded = menuOpen,
-                                                    onDismissRequest = { menuOpen = false }
-                                                ) {
-                                                    DropdownMenuItem(
-                                                        text = { Text("Delete", color = ColorRedAccent) },
-                                                        leadingIcon = {
-                                                            Icon(
-                                                                painter = painterResource(R.drawable.ic_delete),
-                                                                contentDescription = null,
-                                                                tint = ColorRedAccent
-                                                            )
-                                                        },
-                                                        onClick = {
-                                                            menuOpen = false
-                                                            onDelete(item.id)
-                                                        }
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                            RecentDictationItem(
+                                item = item,
+                                onCopy = onCopy,
+                                onDelete = onDelete
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentDictationItem(
+    item: TranscriptRecord,
+    onCopy: (String) -> Unit,
+    onDelete: (Long) -> Unit
+) {
+    val context = LocalContext.current
+    val timeFormat = remember(context) { android.text.format.DateFormat.getTimeFormat(context) }
+
+    val appBitmap by produceState<ImageBitmap?>(initialValue = null, key1 = item.appPackage) {
+        value = withContext(Dispatchers.IO) {
+            loadAppIconBitmap(context, item.appPackage)
+        }
+    }
+
+    val appDisplayName = remember(item.appPackage) {
+        if (item.appPackage.isBlank() || item.appPackage == "unknown") {
+            "SYSTEM"
+        } else {
+            val pm = context.packageManager
+            try {
+                val appInfo = pm.getApplicationInfo(item.appPackage, 0)
+                pm.getApplicationLabel(appInfo).toString().uppercase()
+            } catch (_: Exception) {
+                item.appPackage.substringAfterLast('.').uppercase()
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(ColorCardElevated)
+            .border(1.dp, ColorBorder, RoundedCornerShape(10.dp))
+            .padding(10.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Top Row: App Icon + App Label + Word Count Badge + Timestamp
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (appBitmap != null) {
+                        Image(
+                            bitmap = appBitmap!!,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(14.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(14.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(Color(0xFF1E2028)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = appDisplayName.take(1),
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = ColorMuted,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = appDisplayName,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color.White,
+                        letterSpacing = 0.5.sp
+                    )
+
+                    if (item.wordCount > 0) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFF1A1B22))
+                                .border(0.6.dp, ColorBorder, RoundedCornerShape(4.dp))
+                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = "${item.wordCount} WORDS",
+                                fontSize = 7.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = ColorRedAccent,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    text = timeFormat.format(Date(item.timestampMs)),
+                    fontSize = 8.5.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = ColorSubtle
+                )
+            }
+
+            // Dictation Text with Left Red/Dark Rail Guide
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(2.dp)
+                        .height(30.dp)
+                        .clip(RoundedCornerShape(1.dp))
+                        .background(ColorRedAccent.copy(alpha = 0.5f))
+                )
+
+                Text(
+                    text = item.text,
+                    fontSize = 12.sp,
+                    color = Color.White,
+                    lineHeight = 16.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // Bottom Micro-Actions Bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val durationSec = if (item.durationMs > 0) item.durationMs / 1000f else 0f
+                Text(
+                    text = if (durationSec > 0) "// AUDIO: ${"%.1f".format(durationSec)}S" else "// DIRECT INJECT",
+                    fontSize = 8.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = ColorSubtle
+                )
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(Color(0xFF14151C))
+                            .border(0.8.dp, ColorBorder, RoundedCornerShape(5.dp))
+                            .clickable { onCopy(item.text) }
+                            .padding(horizontal = 7.dp, vertical = 3.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_copy),
+                                contentDescription = "Copy transcription",
+                                tint = ColorMuted,
+                                modifier = Modifier.size(11.dp)
+                            )
+                            Text(
+                                text = "COPY",
+                                fontSize = 8.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = ColorMuted
+                            )
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(Color(0xFF1E1418))
+                            .border(0.8.dp, ColorRedAccent.copy(alpha = 0.5f), RoundedCornerShape(5.dp))
+                            .clickable { onDelete(item.id) }
+                            .padding(horizontal = 7.dp, vertical = 3.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_delete),
+                                contentDescription = "Delete transcription",
+                                tint = ColorRedAccent,
+                                modifier = Modifier.size(11.dp)
+                            )
+                            Text(
+                                text = "DELETE",
+                                fontSize = 8.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = ColorRedAccent
+                            )
                         }
                     }
                 }
