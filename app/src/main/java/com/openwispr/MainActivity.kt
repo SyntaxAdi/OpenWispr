@@ -34,6 +34,7 @@ import com.openwispr.ui.HistoryScreen
 import com.openwispr.ui.HomeScreen
 import com.openwispr.ui.InteractiveDrawer
 import com.openwispr.ui.SettingsScreen
+import com.openwispr.ui.SideNavDrawer
 import kotlinx.coroutines.launch
 
 enum class NavTab {
@@ -72,110 +73,18 @@ class MainActivity : ComponentActivity() {
                     isOpen = isDrawerOpen,
                     onOpen = { isDrawerOpen = true },
                     onClose = { isDrawerOpen = false },
-                    drawerWidth = 280.dp,
+                    drawerWidth = 300.dp,
                     drawerContent = {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color(0xFF070709))
-                                .statusBarsPadding()
-                                .navigationBarsPadding()
-                        ) {
-                            Column {
-                                // Drawer Header
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 20.dp, vertical = 24.dp)
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(42.dp)
-                                                .background(
-                                                    color = Color(0xFF141418),
-                                                    shape = RoundedCornerShape(12.dp)
-                                                ),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                painter = painterResource(R.drawable.ic_mic),
-                                                contentDescription = null,
-                                                tint = Color(0xFFFF2E2E),
-                                                modifier = Modifier.size(22.dp)
-                                            )
-                                        }
-                                        Column {
-                                            Text(
-                                                text = "Open Wispr",
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Color.White
-                                            )
-                                        }
-                                    }
-                                }
-
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                                    color = Color(0xFF141418)
-                                )
-
-                                Spacer(Modifier.height(8.dp))
-
-                                // Navigation Items
-                                NavigationDrawerItem(
-                                    label = { Text("Home", fontWeight = FontWeight.SemiBold) },
-                                    selected = currentTab == NavTab.Home,
-                                    onClick = {
-                                        currentTab = NavTab.Home
-                                        isDrawerOpen = false
-                                    },
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = NavigationDrawerItemDefaults.colors(
-                                        selectedContainerColor = Color(0xFF141418),
-                                        selectedTextColor = Color(0xFFFF2E2E),
-                                        unselectedTextColor = Color(0xFFD1D5DB)
-                                    )
-                                )
-
-                                NavigationDrawerItem(
-                                    label = { Text("History", fontWeight = FontWeight.SemiBold) },
-                                    selected = currentTab == NavTab.History,
-                                    onClick = {
-                                        currentTab = NavTab.History
-                                        isDrawerOpen = false
-                                    },
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = NavigationDrawerItemDefaults.colors(
-                                        selectedContainerColor = Color(0xFF141418),
-                                        selectedTextColor = Color(0xFFFF2E2E),
-                                        unselectedTextColor = Color(0xFFD1D5DB)
-                                    )
-                                )
-
-                                NavigationDrawerItem(
-                                    label = { Text("Settings", fontWeight = FontWeight.SemiBold) },
-                                    selected = currentTab == NavTab.Settings,
-                                    onClick = {
-                                        currentTab = NavTab.Settings
-                                        isDrawerOpen = false
-                                    },
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = NavigationDrawerItemDefaults.colors(
-                                        selectedContainerColor = Color(0xFF141418),
-                                        selectedTextColor = Color(0xFFFF2E2E),
-                                        unselectedTextColor = Color(0xFFD1D5DB)
-                                    )
-                                )
-                            }
-                        }
+                        SideNavDrawer(
+                            currentTab = currentTab,
+                            onSelectTab = { tab ->
+                                currentTab = tab
+                                isDrawerOpen = false
+                            },
+                            onClose = { isDrawerOpen = false },
+                            isAccessibilityActive = isAccessibilityEnabled(),
+                            hasMicPermission = hasMicPermission()
+                        )
                     }
                 ) {
                     Box(

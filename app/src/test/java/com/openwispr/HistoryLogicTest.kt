@@ -188,4 +188,34 @@ class HistoryLogicTest {
 
         return map
     }
+
+    @Test
+    fun testDotMatrixGlyphKerningAndXHeight() {
+        val gRows = com.openwispr.ui.DotMatrixFont.getRows('g')
+        assertEquals(7, gRows.size)
+
+        // 1. Lowercase x-height alignment: rows 0 & 1 must be unlit
+        assertEquals(0, gRows[0])
+        assertEquals(0, gRows[1])
+
+        // 2. Column 4 (bit 0) must be 0 across all 7 rows to prevent glyph collision with adjacent letters
+        for (r in 0 until 7) {
+            val isCol4Lit = (gRows[r] and 1) == 1
+            org.junit.Assert.assertFalse("Row $r of 'g' should not light column 4", isCol4Lit)
+        }
+
+        // 3. Descender presence: rows 5 and 6 must be lit
+        org.junit.Assert.assertTrue((gRows[5] and 0b11111) > 0)
+        org.junit.Assert.assertTrue((gRows[6] and 0b11111) > 0)
+
+        // 4. Lowercase 'q' and 'y' must also adhere to standard row 2 x-height
+        val qRows = com.openwispr.ui.DotMatrixFont.getRows('q')
+        assertEquals(0, qRows[0])
+        assertEquals(0, qRows[1])
+
+        val yRows = com.openwispr.ui.DotMatrixFont.getRows('y')
+        assertEquals(0, yRows[0])
+        assertEquals(0, yRows[1])
+    }
 }
+

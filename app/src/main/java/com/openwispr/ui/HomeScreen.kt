@@ -499,7 +499,7 @@ private fun CardMostUsedApp(stats: HomeStats) {
     }
 
     val nameLines = remember(stats.mostUsedAppName) {
-        com.openwispr.data.HistoryRepository.splitAppNameForDisplay(stats.mostUsedAppName, maxLineChars = 9)
+        com.openwispr.data.HistoryRepository.splitAppNameForDisplay(stats.mostUsedAppName, maxLineChars = 11)
     }
 
     Box(
@@ -523,77 +523,74 @@ private fun CardMostUsedApp(stats: HomeStats) {
                 color = ColorMuted
             )
 
-            // 2. Middle Row: App Icon + Name (Red) + Percentage (White)
+            // 2. Metric Row: App Icon (Left) + Percentage (Right)
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(
-                    modifier = Modifier.weight(1f, fill = false),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(ColorCardElevated)
+                        .border(1.dp, ColorBorder, RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(ColorCardElevated)
-                            .border(1.dp, ColorBorder, RoundedCornerShape(6.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (appBitmap != null) {
-                            Image(
-                                bitmap = appBitmap,
-                                contentDescription = stats.mostUsedAppName,
-                                modifier = Modifier
-                                    .size(18.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                            )
-                        } else {
-                            Text(
-                                text = stats.mostUsedAppName.take(1),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                color = Color.White
-                            )
-                        }
-                    }
-
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(1.5.dp)
-                    ) {
-                        nameLines.forEach { line ->
-                            DotMatrixText(
-                                text = line,
-                                dotSize = 1.35.dp,
-                                dotSpacing = 0.35.dp,
-                                charSpacing = 0.55.dp,
-                                color = ColorRedAccent
-                            )
-                        }
+                    if (appBitmap != null) {
+                        Image(
+                            bitmap = appBitmap,
+                            contentDescription = stats.mostUsedAppName,
+                            modifier = Modifier
+                                .size(20.dp)
+                                .clip(RoundedCornerShape(5.dp))
+                        )
+                    } else {
+                        Text(
+                            text = stats.mostUsedAppName.take(1),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color.White
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.width(6.dp))
-
                 DotMatrixText(
                     text = "${stats.mostUsedAppPercentage}%",
-                    dotSize = 1.6.dp,
-                    dotSpacing = 0.45.dp,
-                    charSpacing = 0.7.dp,
+                    dotSize = 2.1.dp,
+                    dotSpacing = 0.6.dp,
+                    charSpacing = 1.0.dp,
                     color = Color.White
                 )
             }
 
-            // 3. Dual-Row Dot Matrix Progress Bar
+            // 3. Center Row: App Name (Centered Red Dot-Matrix)
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                nameLines.forEach { line ->
+                    DotMatrixText(
+                        text = line,
+                        dotSize = 1.9.dp,
+                        dotSpacing = 0.5.dp,
+                        charSpacing = 1.2.dp,
+                        color = ColorRedAccent
+                    )
+                }
+            }
+
+            // 4. Dual-Row Dot Matrix Progress Bar
             DotMatrixDualProgressBar(
                 progress = stats.mostUsedAppPercentage / 100f,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // 4. Subtitle
+            // 5. Subtitle: Pinned to bottom to match twin card baseline
             Text(
                 text = "Of total words spoken",
                 fontSize = 8.5.sp,
