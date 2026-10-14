@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.text.TextUtils
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,20 +19,22 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.openwispr.data.GroqRepository
 import com.openwispr.data.HistoryRepository
 import com.openwispr.data.SettingsRepository
+import com.openwispr.ui.BottomNavDock
+import com.openwispr.ui.HistoryScreen
 import com.openwispr.ui.HomeScreen
+import com.openwispr.ui.NavTab
 import com.openwispr.ui.SettingsScreen
 import kotlinx.coroutines.launch
-
-enum class AppNavScreen {
-    Home, Settings
-}
 
 class MainActivity : ComponentActivity() {
 
@@ -49,17 +52,24 @@ class MainActivity : ComponentActivity() {
         history = HistoryRepository(applicationContext)
 
         setContent {
-            MaterialTheme {
+            MaterialTheme(
+                colorScheme = darkColorScheme(
+                    background = Color(0xFF070709),
+                    surface = Color(0xFF0E0F14),
+                    primary = Color(0xFFFF2E2E),
+                    onPrimary = Color.White
+                )
+            ) {
                 val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
                 val scope = rememberCoroutineScope()
-                var currentScreen by remember { mutableStateOf(AppNavScreen.Home) }
+                var currentTab by remember { mutableStateOf(NavTab.Home) }
 
                 ModalNavigationDrawer(
                     drawerState = drawerState,
                     drawerContent = {
                         ModalDrawerSheet(
                             modifier = Modifier.width(280.dp),
-                            drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                            drawerContainerColor = Color(0xFF0E0F14)
                         ) {
                             // Drawer Header
                             Column(
@@ -75,7 +85,7 @@ class MainActivity : ComponentActivity() {
                                         modifier = Modifier
                                             .size(42.dp)
                                             .background(
-                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                                color = Color(0xFF1E2028),
                                                 shape = RoundedCornerShape(12.dp)
                                             ),
                                         contentAlignment = Alignment.Center
@@ -83,20 +93,22 @@ class MainActivity : ComponentActivity() {
                                         Icon(
                                             painter = painterResource(R.drawable.ic_mic),
                                             contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            modifier = Modifier.size(24.dp)
+                                            tint = Color(0xFFFF2E2E),
+                                            modifier = Modifier.size(22.dp)
                                         )
                                     }
                                     Column {
                                         Text(
                                             text = "Open Wispr",
                                             style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
                                         )
                                         Text(
-                                            text = "Speech dictation flow",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            text = "YOUR AI VOICE COMPANION",
+                                            fontSize = 9.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = Color(0xFF9CA3AF)
                                         )
                                     }
                                 }
@@ -104,54 +116,108 @@ class MainActivity : ComponentActivity() {
 
                             HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                color = Color(0xFF1E2028)
                             )
 
                             Spacer(Modifier.height(8.dp))
 
-                            // Option 1: Home
+                            // Navigation Items
                             NavigationDrawerItem(
                                 label = { Text("Home", fontWeight = FontWeight.SemiBold) },
-                                selected = currentScreen == AppNavScreen.Home,
+                                selected = currentTab == NavTab.Home,
                                 onClick = {
-                                    currentScreen = AppNavScreen.Home
+                                    currentTab = NavTab.Home
                                     scope.launch { drawerState.close() }
                                 },
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(12.dp),
+                                colors = NavigationDrawerItemDefaults.colors(
+                                    selectedContainerColor = Color(0xFF1E2028),
+                                    selectedTextColor = Color(0xFFFF2E2E),
+                                    unselectedTextColor = Color(0xFFD1D5DB)
+                                )
                             )
 
-                            // Option 2: Settings
                             NavigationDrawerItem(
-                                label = { Text("Settings", fontWeight = FontWeight.SemiBold) },
-                                selected = currentScreen == AppNavScreen.Settings,
+                                label = { Text("History", fontWeight = FontWeight.SemiBold) },
+                                selected = currentTab == NavTab.History,
                                 onClick = {
-                                    currentScreen = AppNavScreen.Settings
+                                    currentTab = NavTab.History
                                     scope.launch { drawerState.close() }
                                 },
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(12.dp),
+                                colors = NavigationDrawerItemDefaults.colors(
+                                    selectedContainerColor = Color(0xFF1E2028),
+                                    selectedTextColor = Color(0xFFFF2E2E),
+                                    unselectedTextColor = Color(0xFFD1D5DB)
+                                )
+                            )
+
+                            NavigationDrawerItem(
+                                label = { Text("Settings", fontWeight = FontWeight.SemiBold) },
+                                selected = currentTab == NavTab.Settings,
+                                onClick = {
+                                    currentTab = NavTab.Settings
+                                    scope.launch { drawerState.close() }
+                                },
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = NavigationDrawerItemDefaults.colors(
+                                    selectedContainerColor = Color(0xFF1E2028),
+                                    selectedTextColor = Color(0xFFFF2E2E),
+                                    unselectedTextColor = Color(0xFFD1D5DB)
+                                )
                             )
                         }
                     }
                 ) {
-                    when (currentScreen) {
-                        AppNavScreen.Home -> HomeScreen(
-                            historyRepo = history,
-                            onOpenDrawer = { scope.launch { drawerState.open() } }
-                        )
-                        AppNavScreen.Settings -> SettingsScreen(
-                            settings = settings,
-                            groq = groq,
-                            onRequestMic = { requestMic() },
-                            onRequestNotif = { requestNotif() },
-                            onOpenAccessibility = { openAccessibility() },
-                            onOpenOverlay = { openOverlay() },
-                            isAccessibilityEnabled = { isAccessibilityEnabled() },
-                            hasMicPermission = { hasMicPermission() },
-                            canDrawOverlays = { Settings.canDrawOverlays(this@MainActivity) },
-                            hasNotifPermission = { hasNotifPermission() },
-                            onOpenDrawer = { scope.launch { drawerState.open() } }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFF070709))
+                    ) {
+                        when (currentTab) {
+                            NavTab.Home, NavTab.Stats -> HomeScreen(
+                                historyRepo = history,
+                                onOpenDrawer = { scope.launch { drawerState.open() } },
+                                onNavigateToSettings = { currentTab = NavTab.Settings },
+                                onNavigateToHistory = { currentTab = NavTab.History },
+                                isServiceActive = isAccessibilityEnabled()
+                            )
+                            NavTab.History -> HistoryScreen(
+                                historyRepo = history,
+                                onBackToHome = { currentTab = NavTab.Home }
+                            )
+                            NavTab.Settings -> SettingsScreen(
+                                settings = settings,
+                                groq = groq,
+                                onRequestMic = { requestMic() },
+                                onRequestNotif = { requestNotif() },
+                                onOpenAccessibility = { openAccessibility() },
+                                onOpenOverlay = { openOverlay() },
+                                isAccessibilityEnabled = { isAccessibilityEnabled() },
+                                hasMicPermission = { hasMicPermission() },
+                                canDrawOverlays = { Settings.canDrawOverlays(this@MainActivity) },
+                                hasNotifPermission = { hasNotifPermission() },
+                                onOpenDrawer = { scope.launch { drawerState.open() } }
+                            )
+                        }
+
+                        // Bottom Navigation Dock
+                        BottomNavDock(
+                            currentTab = currentTab,
+                            onTabSelected = { currentTab = it },
+                            onMicClick = {
+                                if (!hasMicPermission()) {
+                                    requestMic()
+                                } else if (!isAccessibilityEnabled()) {
+                                    openAccessibility()
+                                } else {
+                                    Toast.makeText(this@MainActivity, "Open Wispr is active. Tap any text field to speak.", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.align(Alignment.BottomCenter)
                         )
                     }
                 }

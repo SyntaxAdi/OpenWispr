@@ -19,7 +19,10 @@ data class HomeStats(
     val totalWords: Long,
     val weekStreak: Int,
     val activeAppsCount: Int,
-    val wordsPerMinute: Int
+    val wordsPerMinute: Int,
+    val totalUsageMinutes: Long = 0L,
+    val weeklyDayCounts: Map<Int, Long> = emptyMap(),
+    val activeWeekdays: Set<Int> = emptySet() // 0=Sunday, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
 )
 
 class HistoryRepository(context: Context) {
@@ -139,21 +142,49 @@ class HistoryRepository(context: Context) {
             }
         }
 
-        // 4. Words per minute (WPM)
+        // 4. Weekly distribution and active weekdays (0=Sun, 1=Mon, ..., 6=Sat)
+        val weeklyDayCounts = mutableMapOf<Int, Long>()
+        val activeWeekdays = mutableSetOf<Int>()
+        val cursorWeekly = db.rawQuery(
+            """
+            SELECT strftime('%w', ${HistoryDatabaseHelper.COL_TIMESTAMP_MS} / 1000, 'unixepoch', 'localtime') AS day_of_week,
+                   SUM(${HistoryDatabaseHelper.COL_WORD_COUNT})
+            FROM ${HistoryDatabaseHelper.TABLE_TRANSCRIPTS}
+            WHERE ${HistoryDatabaseHelper.COL_TIMESTAMP_MS} >= ?
+            GROUP BY day_of_week
+            """.trimIndent(),
+            arrayOf(weekStartMs.toString())
+        )
+        cursorWeekly.use { c ->
+            while (c.moveToNext()) {
+                val wDay = c.getString(0).toIntOrNull() ?: continue
+                val sumWords = c.getLong(1)
+                activeWeekdays.add(wDay)
+                val mondayBased = if (wDay == 0) 7 else wDay
+                weeklyDayCounts[mondayBased] = sumWords
+            }
+        }
+
+        // 5. Words per minute (WPM)
         val wpm = if (totalDurationMs > 0 && totalWords > 0) {
             val minutes = totalDurationMs.toDouble() / 60000.0
             (totalWords / minutes).toInt().coerceIn(1, 400)
         } else if (totalWords > 0) {
-            135 // reasonable speaking baseline if duration unrecorded
+            135
         } else {
             0
         }
+
+        val totalMinutes = (totalDurationMs / 60000L).coerceAtLeast(0L)
 
         HomeStats(
             totalWords = totalWords,
             weekStreak = weekStreak,
             activeAppsCount = activeAppsCount,
-            wordsPerMinute = wpm
+            wordsPerMinute = wpm,
+            totalUsageMinutes = totalMinutes,
+            weeklyDayCounts = weeklyDayCounts,
+            activeWeekdays = activeWeekdays
         )
     }
 
