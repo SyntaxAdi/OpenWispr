@@ -413,8 +413,9 @@ private fun CardWeekStreak(stats: HomeStats) {
                             charSpacing = 1.2.dp,
                             color = Color.White
                         )
+                        val streakUnit = if (stats.weekStreak == 1) "Day" else "Days"
                         DotMatrixText(
-                            text = "Days",
+                            text = streakUnit,
                             dotSize = 2.4.dp,
                             dotSpacing = 0.8.dp,
                             charSpacing = 1.2.dp,
@@ -517,27 +518,28 @@ private fun CardMostUsedApp(stats: HomeStats) {
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(
+                    modifier = Modifier.weight(1f, fill = false),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(24.dp)
-                            .clip(RoundedCornerShape(6.dp))
+                            .size(20.dp)
+                            .clip(RoundedCornerShape(5.dp))
                             .background(ColorCardElevated)
-                            .border(1.dp, ColorBorder, RoundedCornerShape(6.dp)),
+                            .border(1.dp, ColorBorder, RoundedCornerShape(5.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         if (appBitmap != null) {
                             Image(
                                 bitmap = appBitmap,
                                 contentDescription = stats.mostUsedAppName,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(13.dp)
                             )
                         } else {
                             Text(
                                 text = stats.mostUsedAppName.take(1),
-                                fontSize = 10.sp,
+                                fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
                                 color = Color.White
@@ -546,19 +548,21 @@ private fun CardMostUsedApp(stats: HomeStats) {
                     }
 
                     DotMatrixText(
-                        text = stats.mostUsedAppName.take(8),
-                        dotSize = 2.0.dp,
-                        dotSpacing = 0.6.dp,
-                        charSpacing = 1.0.dp,
+                        text = stats.mostUsedAppName.take(6),
+                        dotSize = 1.5.dp,
+                        dotSpacing = 0.4.dp,
+                        charSpacing = 0.7.dp,
                         color = ColorRedAccent
                     )
                 }
 
+                Spacer(modifier = Modifier.width(6.dp))
+
                 DotMatrixText(
                     text = "${stats.mostUsedAppPercentage}%",
-                    dotSize = 2.0.dp,
-                    dotSpacing = 0.6.dp,
-                    charSpacing = 1.0.dp,
+                    dotSize = 1.5.dp,
+                    dotSpacing = 0.4.dp,
+                    charSpacing = 0.7.dp,
                     color = Color.White
                 )
             }

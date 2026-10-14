@@ -66,40 +66,23 @@ class HistoryLogicTest {
 
     @Test
     fun testPeakAndPercentageWithoutFallbacks() {
-        // Zero recordings scenario -> must be dashes
+        // 1. Zero recordings scenario -> must be dashes
         val emptyHourly = emptyMap<Int, Long>()
-        val peakEntry = emptyHourly.filter { it.value > 0 }.maxByOrNull { it.value }
-        val peakHourRange = if (peakEntry != null) {
-            com.openwispr.data.HistoryRepository.formatHourRange(peakEntry.key)
-        } else {
-            "--"
-        }
-        val totalWordsRecorded = emptyHourly.values.sum()
-        val avgWordsPerHour = if (totalWordsRecorded > 0) totalWordsRecorded.toDouble() / 24.0 else 0.0
-        val peakPercentageVsAvg = if (peakEntry != null && avgWordsPerHour > 0) {
-            val pct = (((peakEntry.value - avgWordsPerHour) / avgWordsPerHour) * 100).toInt()
-            if (pct >= 0) "+$pct%" else "$pct%"
-        } else {
-            "--"
-        }
+        val emptyStats = com.openwispr.data.HistoryRepository.calculatePeakStats(emptyHourly)
+        assertEquals("--", emptyStats.peakHourRange)
+        assertEquals("--", emptyStats.peakPercentageVsAvg)
 
-        assertEquals("--", peakHourRange)
-        assertEquals("--", peakPercentageVsAvg)
+        // 2. Single active hour (e.g. 1 word at 4 PM) -> shows peak hour but dashes for vs avg (no bogus +2300%)
+        val singleHour = mapOf(16 to 1L)
+        val singleStats = com.openwispr.data.HistoryRepository.calculatePeakStats(singleHour)
+        assertEquals("4 – 5 PM", singleStats.peakHourRange)
+        assertEquals("--", singleStats.peakPercentageVsAvg)
 
-        // Real recordings scenario -> peak at 18 (6-7 PM) with 120 words
+        // 3. Multi-hour active scenario -> peak at 18 (6-7 PM) with 120 words vs 60 words at 9 AM (avg 90 words -> +33%)
         val activeHourly = mapOf(18 to 120L, 9 to 60L)
-        val activePeak = activeHourly.filter { it.value > 0 }.maxByOrNull { it.value }
-        val activePeakRange = if (activePeak != null) {
-            com.openwispr.data.HistoryRepository.formatHourRange(activePeak.key)
-        } else {
-            "--"
-        }
-        val activeAvg = activeHourly.values.sum().toDouble() / 24.0 // 180 / 24 = 7.5 words/hr
-        val activePct = (((activePeak!!.value - activeAvg) / activeAvg) * 100).toInt()
-        val activePctFormatted = if (activePct >= 0) "+$activePct%" else "$activePct%"
-
-        assertEquals("6 – 7 PM", activePeakRange)
-        assertEquals("+1500%", activePctFormatted)
+        val activeStats = com.openwispr.data.HistoryRepository.calculatePeakStats(activeHourly)
+        assertEquals("6 – 7 PM", activeStats.peakHourRange)
+        assertEquals("+33%", activeStats.peakPercentageVsAvg)
     }
 
     @Test
@@ -145,7 +128,7 @@ class HistoryLogicTest {
     @Test
     fun testMostUsedAppPercentageCalculation() {
         // Zero recordings
-        val totalWordsZero = 0L
+        val totalWordsZero: Long = System.currentTimeMillis().let { 0L }
         val topAppWordsZero = 0L
         val pctZero = if (totalWordsZero > 0 && topAppWordsZero > 0) {
             ((topAppWordsZero.toDouble() / totalWordsZero.toDouble()) * 100).toInt().coerceIn(0, 100)

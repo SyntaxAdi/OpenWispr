@@ -208,24 +208,9 @@ class HistoryRepository(private val context: Context) {
             }
         }
 
-        val peakEntry = hourlyCounts.filter { it.value > 0 }.maxByOrNull { it.value }
-        val peakHourRange = if (peakEntry != null) {
-            formatHourRange(peakEntry.key)
-        } else {
-            "--"
-        }
-
-        val totalWordsRecorded = hourlyCounts.values.sum()
-        val avgWordsPerHour = if (totalWordsRecorded > 0) {
-            totalWordsRecorded.toDouble() / 24.0
-        } else 0.0
-
-        val peakPercentageVsAvg = if (peakEntry != null && avgWordsPerHour > 0) {
-            val pct = (((peakEntry.value - avgWordsPerHour) / avgWordsPerHour) * 100).toInt()
-            if (pct >= 0) "+$pct%" else "$pct%"
-        } else {
-            "--"
-        }
+        val peakStats = calculatePeakStats(hourlyCounts)
+        val peakHourRange = peakStats.peakHourRange
+        val peakPercentageVsAvg = peakStats.peakPercentageVsAvg
 
         // 6. Words per minute (WPM) strictly from real recorded duration and words
         val wpm = calculateWpm(totalWords, totalDurationMs)
@@ -253,6 +238,29 @@ class HistoryRepository(private val context: Context) {
     }
 
     companion object {
+        data class PeakStats(
+            val peakHourRange: String,
+            val peakPercentageVsAvg: String
+        )
+
+        fun calculatePeakStats(hourlyCounts: Map<Int, Long>): PeakStats {
+            val activeHours = hourlyCounts.filter { it.value > 0 }
+            val peakEntry = activeHours.maxByOrNull { it.value }
+            if (peakEntry == null) {
+                return PeakStats(peakHourRange = "--", peakPercentageVsAvg = "--")
+            }
+            val peakRange = formatHourRange(peakEntry.key)
+            if (activeHours.size < 2) {
+                return PeakStats(peakHourRange = peakRange, peakPercentageVsAvg = "--")
+            }
+            val avgWordsPerActiveHour = activeHours.values.average()
+            val pct = if (avgWordsPerActiveHour > 0) {
+                (((peakEntry.value - avgWordsPerActiveHour) / avgWordsPerActiveHour) * 100).toInt()
+            } else 0
+            val formattedPct = if (pct >= 0) "+$pct%" else "$pct%"
+            return PeakStats(peakHourRange = peakRange, peakPercentageVsAvg = formattedPct)
+        }
+
         fun resolveAppName(context: Context, packageName: String?): String {
             if (packageName.isNullOrBlank()) return "--"
             return try {
