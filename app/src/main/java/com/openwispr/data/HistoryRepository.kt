@@ -28,7 +28,6 @@ data class HomeStats(
     val mostUsedAppName: String = "--",
     val mostUsedAppWords: Long = 0L,
     val mostUsedAppPercentage: Int = 0,
-    val weeklyDayCounts: Map<Int, Long> = emptyMap(),
     val activeWeekdays: Set<Int> = emptySet(), // 0=Sunday, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
     val hourlyActivityCounts: Map<Int, Long> = emptyMap(), // 0..23 hours
     val peakHourRange: String = "--",
@@ -174,26 +173,19 @@ class HistoryRepository(private val context: Context) {
             }
         }
 
-        // 4. Weekly distribution and active weekdays (0=Sun, 1=Mon, ..., 6=Sat)
-        val weeklyDayCounts = mutableMapOf<Int, Long>()
+        // 4. Active weekdays in current week (0=Sun, 1=Mon, ..., 6=Sat)
         val activeWeekdays = mutableSetOf<Int>()
         val cursorWeekly = db.rawQuery(
             """
-            SELECT strftime('%w', ${HistoryDatabaseHelper.COL_TIMESTAMP_MS} / 1000, 'unixepoch', 'localtime') AS day_of_week,
-                   SUM(${HistoryDatabaseHelper.COL_WORD_COUNT})
+            SELECT DISTINCT CAST(strftime('%w', ${HistoryDatabaseHelper.COL_TIMESTAMP_MS} / 1000, 'unixepoch', 'localtime') AS INTEGER)
             FROM ${HistoryDatabaseHelper.TABLE_TRANSCRIPTS}
             WHERE ${HistoryDatabaseHelper.COL_TIMESTAMP_MS} >= ?
-            GROUP BY day_of_week
             """.trimIndent(),
             arrayOf(weekStartMs.toString())
         )
         cursorWeekly.use { c ->
             while (c.moveToNext()) {
-                val wDay = c.getString(0).toIntOrNull() ?: continue
-                val sumWords = c.getLong(1)
-                activeWeekdays.add(wDay)
-                val mondayBased = if (wDay == 0) 7 else wDay
-                weeklyDayCounts[mondayBased] = sumWords
+                activeWeekdays.add(c.getInt(0))
             }
         }
 
@@ -253,7 +245,6 @@ class HistoryRepository(private val context: Context) {
             mostUsedAppName = mostUsedAppName,
             mostUsedAppWords = mostUsedAppWords,
             mostUsedAppPercentage = mostUsedPercentage,
-            weeklyDayCounts = weeklyDayCounts,
             activeWeekdays = activeWeekdays,
             hourlyActivityCounts = hourlyCounts,
             peakHourRange = peakHourRange,

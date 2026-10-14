@@ -158,21 +158,6 @@ fun HomeScreen(
                     }
                 )
             }
-
-            // 6. Cards 07 & 08: Upcoming Teasers
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        CardAccuracyTeaser()
-                    }
-                    Box(modifier = Modifier.weight(1f)) {
-                        CardProductivityTeaser()
-                    }
-                }
-            }
         }
     }
 }
@@ -896,93 +881,6 @@ private fun CardRecentDictations(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun CardAccuracyTeaser() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(ColorCardBg)
-            .border(1.dp, ColorBorder, RoundedCornerShape(14.dp))
-            .padding(10.dp)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "ACCURACY (SOON)",
-                    fontSize = 7.5.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = ColorSubtle
-                )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                DotMatrixText(
-                    text = "--",
-                    dotSize = 1.8.dp,
-                    dotSpacing = 0.6.dp,
-                    charSpacing = 1.0.dp,
-                    color = ColorRedAccent
-                )
-                DotMatrixText(
-                    text = "%",
-                    dotSize = 1.8.dp,
-                    dotSpacing = 0.6.dp,
-                    charSpacing = 1.0.dp,
-                    color = ColorRedAccent
-                )
-            }
-            Text(
-                text = "Transcription accuracy",
-                fontSize = 9.5.sp,
-                color = ColorSubtle
-            )
-        }
-    }
-}
-
-@Composable
-private fun CardProductivityTeaser() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(ColorCardBg)
-            .border(1.dp, ColorBorder, RoundedCornerShape(14.dp))
-            .padding(10.dp)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "PRODUCTIVITY (SOON)",
-                    fontSize = 7.5.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = ColorSubtle
-                )
-            }
-            DotMatrixText(
-                text = "--",
-                dotSize = 1.8.dp,
-                dotSpacing = 0.6.dp,
-                charSpacing = 1.0.dp,
-                color = Color.White
-            )
-            Text(
-                text = "Words per session",
-                fontSize = 9.5.sp,
-                color = ColorSubtle
-            )
         }
     }
 }

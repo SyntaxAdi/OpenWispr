@@ -32,12 +32,12 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-private val ColorDarkBg = Color(0xFF070709)
-private val ColorCardBg = Color(0xFF0E0F14)
-private val ColorBorder = Color(0xFF1E2028)
+private val ColorDarkBg = Color(0xFF000000)
+private val ColorCardBg = Color(0xFF070709)
+private val ColorBorder = Color(0xFF141416)
 private val ColorRedAccent = Color(0xFFFF2E2E)
-private val ColorMuted = Color(0xFF9CA3AF)
-private val ColorSubtle = Color(0xFF6B7280)
+private val ColorMuted = Color(0xFF8E95A2)
+private val ColorSubtle = Color(0xFF555B66)
 
 @Composable
 fun HistoryScreen(

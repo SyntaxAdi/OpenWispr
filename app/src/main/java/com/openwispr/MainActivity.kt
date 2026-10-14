@@ -33,9 +33,12 @@ import com.openwispr.data.SettingsRepository
 import com.openwispr.ui.HistoryScreen
 import com.openwispr.ui.HomeScreen
 import com.openwispr.ui.InteractiveDrawer
-import com.openwispr.ui.NavTab
 import com.openwispr.ui.SettingsScreen
 import kotlinx.coroutines.launch
+
+enum class NavTab {
+    Home, History, Stats, Settings
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -56,8 +59,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(
                 colorScheme = darkColorScheme(
-                    background = Color(0xFF070709),
-                    surface = Color(0xFF0E0F14),
+                    background = Color(0xFF000000),
+                    surface = Color(0xFF070709),
                     primary = Color(0xFFFF2E2E),
                     onPrimary = Color.White
                 )
@@ -74,7 +77,7 @@ class MainActivity : ComponentActivity() {
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(Color(0xFF0E0F14))
+                                .background(Color(0xFF070709))
                                 .statusBarsPadding()
                                 .navigationBarsPadding()
                         ) {
@@ -93,7 +96,7 @@ class MainActivity : ComponentActivity() {
                                             modifier = Modifier
                                                 .size(42.dp)
                                                 .background(
-                                                    color = Color(0xFF1E2028),
+                                                    color = Color(0xFF141418),
                                                     shape = RoundedCornerShape(12.dp)
                                                 ),
                                             contentAlignment = Alignment.Center
@@ -118,7 +121,7 @@ class MainActivity : ComponentActivity() {
 
                                 HorizontalDivider(
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                                    color = Color(0xFF1E2028)
+                                    color = Color(0xFF141418)
                                 )
 
                                 Spacer(Modifier.height(8.dp))
@@ -134,7 +137,7 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                                     shape = RoundedCornerShape(12.dp),
                                     colors = NavigationDrawerItemDefaults.colors(
-                                        selectedContainerColor = Color(0xFF1E2028),
+                                        selectedContainerColor = Color(0xFF141418),
                                         selectedTextColor = Color(0xFFFF2E2E),
                                         unselectedTextColor = Color(0xFFD1D5DB)
                                     )
@@ -150,7 +153,7 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                                     shape = RoundedCornerShape(12.dp),
                                     colors = NavigationDrawerItemDefaults.colors(
-                                        selectedContainerColor = Color(0xFF1E2028),
+                                        selectedContainerColor = Color(0xFF141418),
                                         selectedTextColor = Color(0xFFFF2E2E),
                                         unselectedTextColor = Color(0xFFD1D5DB)
                                     )
@@ -166,7 +169,7 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                                     shape = RoundedCornerShape(12.dp),
                                     colors = NavigationDrawerItemDefaults.colors(
-                                        selectedContainerColor = Color(0xFF1E2028),
+                                        selectedContainerColor = Color(0xFF141418),
                                         selectedTextColor = Color(0xFFFF2E2E),
                                         unselectedTextColor = Color(0xFFD1D5DB)
                                     )
@@ -178,7 +181,7 @@ class MainActivity : ComponentActivity() {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color(0xFF070709))
+                            .background(Color(0xFF000000))
                     ) {
                         when (currentTab) {
                             NavTab.Home, NavTab.Stats -> HomeScreen(
