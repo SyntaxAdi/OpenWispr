@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Top Arc (Segment 1): from ~10:30 to ~1:00 -->
+    <path
+        android:pathData="M 49,33 A 21,21 0 0,0 35,42"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <!-- Bottom Arc (Segment 2): from ~9:30 down around to ~5:00 -->
+    <path
+        android:pathData="M 32,48 A 21,21 0 0,0 49,75"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <!-- Sound Bar 1 (Medium-Short) -->
+    <path
+        android:pathData="M 48,48 L 48,60"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round" />
+
+    <!-- Sound Bar 2 (Tallest) -->
+    <path
+        android:pathData="M 54,42 L 54,66"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round" />
+
+    <!-- Sound Bar 3 (Medium) -->
+    <path
+        android:pathData="M 60,49 L 60,59"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round" />
+
+    <!-- Sound Bar 4 (Short) -->
+    <path
+        android:pathData="M 65,51.5 L 65,56.5"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round" />
+
+    <!-- Sound Particle (White Dot) -->
+    <path
+        android:pathData="M 71,54 A 1.4,1.4 0 1,1 70.99,54 Z"
+        android:fillColor="#FFFFFF" />
+
+    <!-- Sound Wave Terminal (White Dot for Monochrome Tinting) -->
+    <path
+        android:pathData="M 77,54 A 2,2 0 1,1 76.99,54 Z"
+        android:fillColor="#FFFFFF" />
+</vector>
