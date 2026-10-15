@@ -70,6 +70,18 @@ class SettingsAndSecurityTest {
             assertTrue("SettingsScreen must contain SettingsSearchBar", content.contains("SettingsSearchBar"))
             assertTrue("SettingsScreen must contain TactileNothingSlider", content.contains("TactileNothingSlider"))
             assertTrue("SettingsSubPageHeader must not show duplicate section tag on title", !content.contains("// \$sectionIndex"))
+
+            // Verify Strategic UX Optimizations
+            assertTrue("SettingsScreen must contain unified AiCloudEngines section", content.contains("AiCloudEngines"))
+            assertTrue("SettingsScreen must contain PASTE button", content.contains("\"PASTE\""))
+            assertTrue("SettingsScreen must contain TEST LATENCY button", content.contains("TEST LATENCY"))
+            assertTrue("SettingsScreen must display latency telemetry", content.contains("ms)"))
+            assertTrue("SettingsScreen must eliminate manual save button", !content.contains("SAVE API KEY"))
+            assertTrue("SettingsScreen must contain SIZE PRESETS", content.contains("SIZE PRESETS"))
+            assertTrue("SettingsScreen must contain COMPACT preset", content.contains("\"COMPACT\""))
+            assertTrue("SettingsScreen must contain BALANCED preset", content.contains("\"BALANCED\""))
+            assertTrue("SettingsScreen must contain LARGE preset", content.contains("\"LARGE\""))
+            assertTrue("SettingsScreen must trigger haptic feedback", content.contains("HapticFeedbackType.TextHandleMove"))
         }
 
         val historyFile = java.io.File("src/main/java/com/openwispr/ui/HistoryScreen.kt")

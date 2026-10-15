@@ -1,6 +1,7 @@
 package com.openwispr.ui
 
 import android.os.Build
+import android.os.SystemClock
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,8 +25,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.progressBarRangeInfo
@@ -59,10 +63,9 @@ private val ColorSubtle = Color(0xFF555B66)
 
 enum class SettingsSection(val title: String, val sectionIndex: String) {
     HardwarePermissions("Hardware & Permissions", "01 HARDWARE"),
-    CloudCredentials("Groq Cloud Credentials", "02 CREDENTIALS"),
-    AiInferenceEngines("AI Inference Engines", "03 AI ENGINES"),
-    BubbleAndInterface("Floating Bubble & Interface", "04 INTERFACE"),
-    SystemTelemetry("System & Runtime Telemetry", "05 TELEMETRY")
+    AiCloudEngines("Groq Cloud & AI Engines", "02 AI CLOUD"),
+    BubbleAndInterface("Floating Bubble & Timing", "03 INTERFACE"),
+    SystemTelemetry("System & Runtime Telemetry", "04 TELEMETRY")
 }
 
 data class SearchableSetting(
@@ -88,6 +91,8 @@ fun SettingsScreen(
     onOpenDrawer: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
+    val clipboardManager = LocalClipboardManager.current
+    val haptic = LocalHapticFeedback.current
 
     var currentSection by remember { mutableStateOf<SettingsSection?>(null) }
     var searchQuery by remember { mutableStateOf("") }
@@ -162,19 +167,19 @@ fun SettingsScreen(
                 title = "Groq Cloud API Key",
                 description = "Encrypted on-device using Android KeyStore hardware backing (gsk_...)",
                 keywords = listOf("groq", "api", "key", "token", "auth", "credentials", "cloud", "keystore"),
-                section = SettingsSection.CloudCredentials
+                section = SettingsSection.AiCloudEngines
             ),
             SearchableSetting(
                 title = "Speech-to-Text Model (ASR)",
                 description = "Cloud inference model: whisper-large-v3-turbo or whisper-large-v3",
                 keywords = listOf("whisper", "speech", "text", "asr", "transcribe", "model", "stt"),
-                section = SettingsSection.AiInferenceEngines
+                section = SettingsSection.AiCloudEngines
             ),
             SearchableSetting(
                 title = "Text Refinement Model (LLM)",
                 description = "Intelligent grammar & stutter cleaner: Llama 3.1 / 3.3 models",
                 keywords = listOf("llama", "llm", "refine", "grammar", "cleaner", "model", "post-process"),
-                section = SettingsSection.AiInferenceEngines
+                section = SettingsSection.AiCloudEngines
             ),
             SearchableSetting(
                 title = "Floating Bubble Diameter",
@@ -328,36 +333,27 @@ fun SettingsScreen(
                             onClick = { currentSection = SettingsSection.HardwarePermissions }
                         )
 
-                        // 2. Groq Cloud Credentials
+                        // 2. Groq Cloud & AI Engines
                         SettingsCategoryCard(
                             sectionNumber = "02",
-                            title = "GROQ CLOUD CREDENTIALS",
-                            subtitle = "API key authentication & KeyStore security",
-                            statusTag = if (apiKey.isNotBlank()) "CONFIGURED" else "REQUIRED",
-                            onClick = { currentSection = SettingsSection.CloudCredentials }
+                            title = "GROQ CLOUD & AI ENGINES",
+                            subtitle = "API key, Whisper STT & Llama grammar refiner",
+                            statusTag = if (apiKey.isNotBlank()) "ONLINE" else "KEY REQUIRED",
+                            onClick = { currentSection = SettingsSection.AiCloudEngines }
                         )
 
-                        // 3. AI Inference Engines
+                        // 3. Floating Bubble & Timing
                         SettingsCategoryCard(
                             sectionNumber = "03",
-                            title = "AI INFERENCE ENGINES",
-                            subtitle = "Whisper Large v3 (ASR) & Llama 3.1 (Refiner)",
-                            statusTag = "ONLINE",
-                            onClick = { currentSection = SettingsSection.AiInferenceEngines }
-                        )
-
-                        // 4. Floating Bubble & Timing
-                        SettingsCategoryCard(
-                            sectionNumber = "04",
                             title = "FLOATING BUBBLE & TIMING",
                             subtitle = "Bubble diameter, opacity, live preview & max record time",
                             statusTag = "${bubbleDp}DP • ${bubbleOpacity}%",
                             onClick = { currentSection = SettingsSection.BubbleAndInterface }
                         )
 
-                        // 5. System Telemetry
+                        // 4. System Telemetry
                         SettingsCategoryCard(
-                            sectionNumber = "05",
+                            sectionNumber = "04",
                             title = "SYSTEM TELEMETRY",
                             subtitle = "Kernel version, Compose runtime & TLS specs",
                             statusTag = "v1.0.0",
@@ -417,12 +413,14 @@ fun SettingsScreen(
                             }
                         }
 
-                        SettingsSection.CloudCredentials -> {
+                        SettingsSection.AiCloudEngines -> {
                             OledSettingsCard {
+                                // Groq Cloud API Key Input with Auto-Save
                                 OutlinedTextField(
                                     value = apiKey,
                                     onValueChange = {
                                         apiKey = it
+                                        settings.apiKey = it.trim()
                                         validateMsg = null
                                         validateOk = null
                                     },
@@ -438,21 +436,64 @@ fun SettingsScreen(
                                     colors = textFieldColors,
                                     visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
                                     trailingIcon = {
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(ColorCardElevated)
-                                                .border(1.dp, ColorBorderSubtle, RoundedCornerShape(6.dp))
-                                                .clickable { showKey = !showKey }
-                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            modifier = Modifier.padding(end = 8.dp)
                                         ) {
-                                            Text(
-                                                text = if (showKey) "HIDE" else "SHOW",
-                                                color = Color.White,
-                                                fontSize = 10.sp,
-                                                fontFamily = FontFamily.Monospace,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
+                                            // One-Tap Clipboard Paste Button
+                                            val clipText = clipboardManager.getText()?.text.orEmpty()
+                                            val hasGskClip = clipText.trim().startsWith("gsk_")
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(ColorCardElevated)
+                                                    .border(
+                                                        width = 1.dp,
+                                                        color = if (hasGskClip) ColorRedAccent else ColorBorderSubtle,
+                                                        shape = RoundedCornerShape(6.dp)
+                                                    )
+                                                    .clickable {
+                                                        val sanitized = clipText.trim()
+                                                            .replace("\n", "")
+                                                            .replace("\r", "")
+                                                            .replace("\"", "")
+                                                            .replace("'", "")
+                                                        if (sanitized.isNotBlank()) {
+                                                            apiKey = sanitized
+                                                            settings.apiKey = sanitized
+                                                            validateMsg = "✓ PASTED & STORED"
+                                                            validateOk = true
+                                                        }
+                                                    }
+                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            ) {
+                                                Text(
+                                                    text = "PASTE",
+                                                    color = if (hasGskClip) ColorRedAccent else Color.White,
+                                                    fontSize = 10.sp,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+
+                                            // Show / Hide Toggle
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(ColorCardElevated)
+                                                    .border(1.dp, ColorBorderSubtle, RoundedCornerShape(6.dp))
+                                                    .clickable { showKey = !showKey }
+                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (showKey) "HIDE" else "SHOW",
+                                                    color = Color.White,
+                                                    fontSize = 10.sp,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
                                         }
                                     },
                                     textStyle = LocalTextStyle.current.copy(
@@ -463,7 +504,7 @@ fun SettingsScreen(
                                 )
 
                                 Text(
-                                    text = "Encrypted on-device using Android KeyStore hardware backing.",
+                                    text = "Encrypted on-device using Android KeyStore hardware backing (Auto-Saved).",
                                     fontSize = 10.sp,
                                     fontFamily = FontFamily.Monospace,
                                     color = ColorSubtle
@@ -474,7 +515,7 @@ fun SettingsScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    // Test Button
+                                    // Test Button with Latency Benchmark
                                     Button(
                                         onClick = {
                                             scope.launch {
@@ -482,16 +523,19 @@ fun SettingsScreen(
                                                 validateMsg = null
                                                 validateOk = null
                                                 settings.apiKey = apiKey.trim()
+                                                val startMs = SystemClock.elapsedRealtime()
                                                 val res = groq.validateKey(Constants.DEFAULT_BASE_URL, apiKey.trim())
+                                                val elapsedMs = SystemClock.elapsedRealtime() - startMs
                                                 validating = false
                                                 when (res) {
                                                     is GroqResult.Success -> {
                                                         validateOk = true
-                                                        validateMsg = "✓ KEY VERIFIED"
+                                                        validateMsg = "✓ VERIFIED (${elapsedMs}ms)"
                                                     }
                                                     is GroqResult.Error -> {
                                                         validateOk = false
-                                                        validateMsg = "✗ ${res.message.take(35)}"
+                                                        val errSnippet = res.message.take(28)
+                                                        validateMsg = "✗ (${elapsedMs}ms) $errSnippet"
                                                     }
                                                 }
                                             }
@@ -515,7 +559,7 @@ fun SettingsScreen(
                                             )
                                         } else {
                                             Text(
-                                                text = "TEST",
+                                                text = "TEST LATENCY",
                                                 fontSize = 10.5.sp,
                                                 fontFamily = FontFamily.Monospace,
                                                 fontWeight = FontWeight.Bold,
@@ -524,30 +568,7 @@ fun SettingsScreen(
                                         }
                                     }
 
-                                    // Save Button
-                                    Button(
-                                        onClick = {
-                                            settings.apiKey = apiKey.trim()
-                                            validateMsg = "✓ SAVED TO KEYSTORE"
-                                            validateOk = true
-                                        },
-                                        shape = RoundedCornerShape(8.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = ColorRedAccent,
-                                            contentColor = Color.White
-                                        ),
-                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
-                                    ) {
-                                        Text(
-                                            text = "SAVE",
-                                            fontSize = 10.5.sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontWeight = FontWeight.Bold,
-                                            letterSpacing = 0.5.sp
-                                        )
-                                    }
-
-                                    // Result Pill
+                                    // Real-time Result Pill
                                     validateMsg?.let { msg ->
                                         Box(
                                             modifier = Modifier
@@ -572,11 +593,10 @@ fun SettingsScreen(
                                         }
                                     }
                                 }
-                            }
-                        }
 
-                        SettingsSection.AiInferenceEngines -> {
-                            OledSettingsCard {
+                                HorizontalDivider(color = ColorBorderSubtle.copy(alpha = 0.5f), thickness = 0.5.dp)
+
+                                // Speech-to-Text Model Selection
                                 ModelDropdown(
                                     label = "Speech-to-Text Model",
                                     category = "ASR ENGINE",
@@ -590,6 +610,7 @@ fun SettingsScreen(
 
                                 HorizontalDivider(color = ColorBorderSubtle.copy(alpha = 0.5f), thickness = 0.5.dp)
 
+                                // Text Refinement Model Selection
                                 ModelDropdown(
                                     label = "Text Refinement Model",
                                     category = "POST-PROCESSOR",
@@ -699,6 +720,82 @@ fun SettingsScreen(
 
                             // Sliders Card
                             OledSettingsCard {
+                                // Quick Size Presets
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "SIZE PRESETS",
+                                            fontSize = 10.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            color = ColorMuted,
+                                            letterSpacing = 0.6.sp
+                                        )
+                                        Text(
+                                            text = "QUICK SELECT",
+                                            fontSize = 8.5.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = ColorSubtle
+                                        )
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        val presets = listOf(
+                                            "COMPACT" to 48,
+                                            "BALANCED" to 56,
+                                            "LARGE" to 72
+                                        )
+                                        presets.forEach { (name, size) ->
+                                            val isSelected = bubbleDp == size
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(if (isSelected) ColorCardElevated else ColorDarkBg)
+                                                    .border(
+                                                        width = 1.dp,
+                                                        color = if (isSelected) ColorRedAccent else ColorBorderSubtle,
+                                                        shape = RoundedCornerShape(8.dp)
+                                                    )
+                                                    .clickable {
+                                                        bubbleDp = size
+                                                        settings.bubbleDp = size
+                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    }
+                                                    .padding(vertical = 8.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                    Text(
+                                                        text = name,
+                                                        fontSize = 9.sp,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (isSelected) ColorRedAccent else ColorSubtle,
+                                                        letterSpacing = 0.5.sp
+                                                    )
+                                                    Text(
+                                                        text = "${size} DP",
+                                                        fontSize = 10.5.sp,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (isSelected) Color.White else ColorMuted
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                HorizontalDivider(color = ColorBorderSubtle.copy(alpha = 0.5f), thickness = 0.5.dp)
+
                                 // 1. Bubble Diameter Slider
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Row(
@@ -1205,8 +1302,10 @@ fun TactileNothingSlider(
     rightLabel: String,
     modifier: Modifier = Modifier
 ) {
+    val haptic = LocalHapticFeedback.current
     val rangeSpan = (valueRange.endInclusive - valueRange.start).coerceAtLeast(1f)
     val fraction = ((value - valueRange.start) / rangeSpan).coerceIn(0f, 1f)
+    var lastSnappedSlot by remember { mutableIntStateOf(-1) }
 
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -1235,6 +1334,10 @@ fun TactileNothingSlider(
                         val newFraction = (x / size.width).coerceIn(0f, 1f)
                         val totalSlots = steps + 1
                         val snappedSlot = (newFraction * totalSlots).roundToInt()
+                        if (snappedSlot != lastSnappedSlot) {
+                            lastSnappedSlot = snappedSlot
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
                         val snappedFraction = (snappedSlot.toFloat() / totalSlots).coerceIn(0f, 1f)
                         val newValue = valueRange.start + snappedFraction * rangeSpan
                         onValueChange(newValue)
@@ -1249,6 +1352,10 @@ fun TactileNothingSlider(
                         val newFraction = (x / size.width).coerceIn(0f, 1f)
                         val totalSlots = steps + 1
                         val snappedSlot = (newFraction * totalSlots).roundToInt()
+                        if (snappedSlot != lastSnappedSlot) {
+                            lastSnappedSlot = snappedSlot
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
                         val snappedFraction = (snappedSlot.toFloat() / totalSlots).coerceIn(0f, 1f)
                         val newValue = valueRange.start + snappedFraction * rangeSpan
                         onValueChange(newValue)
