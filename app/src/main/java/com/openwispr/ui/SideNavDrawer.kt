@@ -2,7 +2,9 @@ package com.openwispr.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -33,8 +35,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.isActive
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -70,6 +76,7 @@ fun SideNavDrawer(
     onClose: () -> Unit,
     isAccessibilityActive: Boolean,
     hasMicPermission: Boolean,
+    isOpen: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -216,7 +223,8 @@ fun SideNavDrawer(
                 // 5. Hardware System Telemetry Card
                 DrawerTelemetryCard(
                     isAccessibilityActive = isAccessibilityActive,
-                    hasMicPermission = hasMicPermission
+                    hasMicPermission = hasMicPermission,
+                    isOpen = isOpen
                 )
             }
 
@@ -381,8 +389,46 @@ private fun SideNavCardItem(
 private fun DrawerTelemetryCard(
     isAccessibilityActive: Boolean,
     hasMicPermission: Boolean,
+    isOpen: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val isAllGranted = isAccessibilityActive && hasMicPermission
+    val patterns = remember {
+        listOf(
+            DotAnimationPattern.SequentialFill,
+            DotAnimationPattern.CascadeLighting,
+            DotAnimationPattern.BreathingPulse,
+            DotAnimationPattern.PingPongScanner,
+            DotAnimationPattern.CenterOutRipple,
+            DotAnimationPattern.MatrixShimmer
+        )
+    }
+    var currentPatternIndex by remember { mutableIntStateOf(0) }
+    val animProgress = remember { Animatable(0f) }
+
+    LaunchedEffect(isOpen, isAllGranted) {
+        if (isOpen && isAllGranted) {
+            while (isActive) {
+                animProgress.snapTo(0f)
+                val duration = when (patterns[currentPatternIndex]) {
+                    DotAnimationPattern.CascadeLighting -> 2200
+                    DotAnimationPattern.BreathingPulse -> 2000
+                    DotAnimationPattern.PingPongScanner -> 2400
+                    DotAnimationPattern.SequentialFill -> 2600
+                    DotAnimationPattern.CenterOutRipple -> 2200
+                    DotAnimationPattern.MatrixShimmer -> 2500
+                }
+                animProgress.animateTo(
+                    targetValue = 1f,
+                    animationSpec = tween(durationMillis = duration, easing = LinearEasing)
+                )
+                currentPatternIndex = (currentPatternIndex + 1) % patterns.size
+            }
+        } else {
+            animProgress.snapTo(0f)
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -435,10 +481,13 @@ private fun DrawerTelemetryCard(
                 dotColor = ColorMuted
             )
 
-            // Dot-matrix decor bar
+            // Dot-matrix decor bar with 6 looping hardware LED telemetry animations
             DotMatrixDualProgressBar(
-                progress = if (isAccessibilityActive && hasMicPermission) 1.0f else 0.5f,
-                modifier = Modifier.fillMaxWidth()
+                progress = if (isAllGranted) 1.0f else 0.5f,
+                modifier = Modifier.fillMaxWidth(),
+                isAnimated = isOpen && isAllGranted,
+                animationPattern = patterns[currentPatternIndex],
+                animationProgress = animProgress.value
             )
         }
     }

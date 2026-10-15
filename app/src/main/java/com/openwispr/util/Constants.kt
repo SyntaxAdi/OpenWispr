@@ -12,6 +12,9 @@ object Constants {
     const val MAX_BUBBLE_DP = 100
     const val MIN_REC_SEC = 15
     const val MAX_REC_SEC = 120
+    const val DEFAULT_BUBBLE_OPACITY = 100
+    const val MIN_BUBBLE_OPACITY = 20
+    const val MAX_BUBBLE_OPACITY = 100
     const val SYSTEM_PROMPT = "You are a speech cleaner. Remove stutters, filler words (uh, um, like, you know, ah, hmm), repetitions, rambling and false starts. Fix grammar and punctuation. Preserve original intent and meaning. Return ONLY the cleaned text, no quotes, no explanation, no prefix like 'Message:', 'Here is the cleaned text:', or similar."
 
     /** Strip LLM-added prefixes like "Message:", "Cleaned text:" and surrounding quotes. */

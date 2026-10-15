@@ -19,6 +19,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
+import kotlin.math.abs
+import kotlin.math.sin
+import kotlin.math.pow
+import kotlin.math.PI
 
 /**
  * 5x7 Dot-matrix font glyph bitmasks.
@@ -463,11 +467,19 @@ fun DotSpeedAscentStreak(
     }
 }
 
+enum class DotAnimationPattern {
+    SequentialFill,
+    CascadeLighting,
+    BreathingPulse,
+    PingPongScanner,
+    CenterOutRipple,
+    MatrixShimmer
+}
+
 /**
- * Dual-row dot matrix progress bar for "MOST USED APP".
- * Renders two horizontal rows of dots spanning across the card width.
- * Dots up to the given progress percentage are lit with Signal Red,
- * and the remaining dots are rendered in ghost color.
+ * Dual-row dot matrix progress bar.
+ * In static mode, renders dots according to progress percentage.
+ * In animated mode, renders multi-phase hardware LED telemetry animations.
  */
 @Composable
 fun DotMatrixDualProgressBar(
@@ -475,7 +487,10 @@ fun DotMatrixDualProgressBar(
     modifier: Modifier = Modifier,
     numDots: Int = 22,
     dotSize: Dp = 2.4.dp,
-    rowSpacing: Dp = 3.dp
+    rowSpacing: Dp = 3.dp,
+    isAnimated: Boolean = false,
+    animationPattern: DotAnimationPattern = DotAnimationPattern.SequentialFill,
+    animationProgress: Float = 0f
 ) {
     Canvas(
         modifier = modifier
@@ -485,18 +500,86 @@ fun DotMatrixDualProgressBar(
         val dSize = dotSize.toPx()
         val radius = dSize / 2f
         val rSpacing = rowSpacing.toPx()
-        val activeCount = (progress.coerceIn(0f, 1f) * numDots).roundToInt()
         val stepX = if (numDots > 1) (size.width - dSize) / (numDots - 1) else 0f
+        val baseRed = Color(0xFFFF2E2E)
+        val ghostColor = Color(0x22FFFFFF)
 
         for (row in 0..1) {
             val cy = row * (dSize + rSpacing) + radius
             for (col in 0 until numDots) {
                 val cx = col * stepX + radius
-                val isActive = col < activeCount
-                val color = if (isActive) Color(0xFFFF2E2E) else Color(0x22FFFFFF)
-                drawCircle(color = color, radius = radius, center = Offset(cx, cy))
+                val dotColor: Color = if (!isAnimated) {
+                    val activeCount = (progress.coerceIn(0f, 1f) * numDots).roundToInt()
+                    if (col < activeCount) baseRed else ghostColor
+                } else {
+                    val p = animationProgress.coerceIn(0f, 1f)
+                    when (animationPattern) {
+                        DotAnimationPattern.SequentialFill -> {
+                            // Phase A (0.0 to 0.5): Fill left to right; Phase B (0.5 to 1.0): Drain left to right
+                            if (p <= 0.5f) {
+                                val fillThreshold = (p * 2f * numDots)
+                                if (col <= fillThreshold) baseRed else ghostColor
+                            } else {
+                                val drainThreshold = ((p - 0.5f) * 2f * numDots)
+                                if (col >= drainThreshold) baseRed else ghostColor
+                            }
+                        }
+                        DotAnimationPattern.CascadeLighting -> {
+                            // Comet head sweeps across dots with a fading phosphor tail
+                            val headPos = p * (numDots + 8) - 4
+                            val distance = headPos - col
+                            if (distance in 0f..7f) {
+                                val alphaFactor = (1f - (distance / 7f)).pow(1.6f)
+                                baseRed.copy(alpha = (0.15f + 0.85f * alphaFactor).coerceIn(0.15f, 1f))
+                            } else {
+                                ghostColor
+                            }
+                        }
+                        DotAnimationPattern.BreathingPulse -> {
+                            // Synchronous breathing sine wave across entire LED bank
+                            val wave = (sin(p * 2 * Math.PI.toFloat()) + 1f) / 2f
+                            baseRed.copy(alpha = (0.22f + 0.78f * wave).coerceIn(0.22f, 1f))
+                        }
+                        DotAnimationPattern.PingPongScanner -> {
+                            // Dual beam ping-pong bounce left to right and back
+                            val pos = if (p < 0.5f) p * 2f * (numDots - 1) else (1f - p) * 2f * (numDots - 1)
+                            val dist = abs(col - pos)
+                            if (dist < 3.2f) {
+                                val alpha = (1f - dist / 3.2f).coerceIn(0f, 1f)
+                                baseRed.copy(alpha = (0.18f + 0.82f * alpha).coerceIn(0.18f, 1f))
+                            } else {
+                                ghostColor
+                            }
+                        }
+                        DotAnimationPattern.CenterOutRipple -> {
+                            // Wave originating from center expanding outward
+                            val center = (numDots - 1) / 2f
+                            val distCenter = abs(col - center)
+                            val wavePos = p * (center + 2)
+                            val distWave = abs(distCenter - wavePos)
+                            if (distWave < 2.5f) {
+                                val alpha = (1f - distWave / 2.5f).coerceIn(0f, 1f)
+                                baseRed.copy(alpha = (0.18f + 0.82f * alpha).coerceIn(0.18f, 1f))
+                            } else {
+                                ghostColor
+                            }
+                        }
+                        DotAnimationPattern.MatrixShimmer -> {
+                            // Stochastic sparkle across dot grid
+                            val seed = ((col * 31 + row * 19 + (p * 28).toInt() * 11) % 100)
+                            if (seed > 38) {
+                                val shimmerAlpha = (0.45f + 0.55f * ((seed % 50) / 50f))
+                                baseRed.copy(alpha = shimmerAlpha)
+                            } else {
+                                ghostColor
+                            }
+                        }
+                    }
+                }
+                drawCircle(color = dotColor, radius = radius, center = Offset(cx, cy))
             }
         }
     }
 }
+
 

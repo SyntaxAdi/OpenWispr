@@ -65,6 +65,10 @@ class SettingsRepository(context: Context) {
         get() = sp.getInt("bubble_dp", Constants.DEFAULT_BUBBLE_DP)
         set(v) = sp.edit().putInt("bubble_dp", v.coerceIn(Constants.MIN_BUBBLE_DP, Constants.MAX_BUBBLE_DP)).apply()
 
+    var bubbleOpacity: Int
+        get() = sp.getInt("bubble_opacity", Constants.DEFAULT_BUBBLE_OPACITY)
+        set(v) = sp.edit().putInt("bubble_opacity", v.coerceIn(Constants.MIN_BUBBLE_OPACITY, Constants.MAX_BUBBLE_OPACITY)).apply()
+
     var maxSec: Int
         get() = sp.getInt("max_sec", Constants.DEFAULT_MAX_SEC)
         set(v) = sp.edit().putInt("max_sec", v.coerceIn(Constants.MIN_REC_SEC, Constants.MAX_REC_SEC)).apply()

@@ -47,13 +47,16 @@ private val ColorSubtle = Color(0xFF555B66)
 @Composable
 fun HistoryScreen(
     historyRepo: HistoryRepository,
-    onBackToHome: () -> Unit,
+    onOpenDrawer: () -> Unit,
+    onBackToHome: () -> Unit = onOpenDrawer,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var transcripts by remember { mutableStateOf<List<TranscriptRecord>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+
+    androidx.activity.compose.BackHandler(onBack = onBackToHome)
 
     fun refresh() {
         scope.launch {
@@ -101,34 +104,41 @@ fun HistoryScreen(
                         .height(44.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Left back button - 44dp squircle
+                    // Left drawer menu button - 44dp squircle
                     Box(
                         modifier = Modifier
                             .size(44.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .background(ColorCardBg)
                             .border(1.dp, ColorBorder, RoundedCornerShape(10.dp))
-                            .clickable { onBackToHome() }
+                            .clickable { onOpenDrawer() }
                             .align(Alignment.CenterStart),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "←",
-                            fontSize = 18.sp,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
+                        Icon(
+                            painter = painterResource(R.drawable.ic_menu),
+                            contentDescription = "Menu",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
 
-                    // Center Title: Dot Matrix HISTORY aligned to same level as back button
-                    DotMatrixText(
-                        text = "HISTORY",
-                        dotSize = 3.0.dp,
-                        dotSpacing = 1.0.dp,
-                        charSpacing = 2.2.dp,
-                        color = Color.White,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+                    // Center Title: Dot Matrix HISTORY with safe padding (Zero Overlap Guaranteed)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 72.dp)
+                            .align(Alignment.Center),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        DotMatrixText(
+                            text = "HISTORY",
+                            dotSize = 2.8.dp,
+                            dotSpacing = 0.9.dp,
+                            charSpacing = 1.8.dp,
+                            color = Color.White
+                        )
+                    }
 
                     // Right Badge: Telemetry record count
                     Box(

@@ -136,6 +136,7 @@ class BubbleManager(
             background = null
             clipToOutline = false
             elevation = 8f
+            alpha = (settings.bubbleOpacity.coerceIn(com.openwispr.util.Constants.MIN_BUBBLE_OPACITY, com.openwispr.util.Constants.MAX_BUBBLE_OPACITY) / 100f)
         }
         val mic = ImageView(ctx).apply {
             setImageResource(R.drawable.ic_bubble)
@@ -341,6 +342,7 @@ class BubbleManager(
             if (isAttached) try { wm.updateViewLayout(bubbleView, p) } catch (_: Exception) {}
         }
         (bubbleView as? ViewGroup)?.getChildAt(0)?.background = null
+        bubbleView?.alpha = (settings.bubbleOpacity.coerceIn(com.openwispr.util.Constants.MIN_BUBBLE_OPACITY, com.openwispr.util.Constants.MAX_BUBBLE_OPACITY) / 100f)
     }
 
     private fun expand() {

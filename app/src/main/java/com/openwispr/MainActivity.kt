@@ -83,7 +83,8 @@ class MainActivity : ComponentActivity() {
                             },
                             onClose = { isDrawerOpen = false },
                             isAccessibilityActive = isAccessibilityEnabled(),
-                            hasMicPermission = hasMicPermission()
+                            hasMicPermission = hasMicPermission(),
+                            isOpen = isDrawerOpen
                         )
                     }
                 ) {
@@ -100,6 +101,7 @@ class MainActivity : ComponentActivity() {
                             )
                             NavTab.History -> HistoryScreen(
                                 historyRepo = history,
+                                onOpenDrawer = { isDrawerOpen = true },
                                 onBackToHome = { currentTab = NavTab.Home }
                             )
                             NavTab.Settings -> SettingsScreen(

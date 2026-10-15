@@ -257,6 +257,8 @@ class HistoryLogicTest {
             val content = historyFile.readText()
             assertTrue("HistoryScreen must contain DotMatrixText with HISTORY", content.contains("text = \"HISTORY\""))
             assertTrue("HistoryScreen must not contain raw DICTATION HISTORY text", !content.contains("text = \"DICTATION HISTORY\""))
+            assertTrue("HistoryScreen must use ic_menu for side drawer access", content.contains("ic_menu"))
+            assertTrue("HistoryScreen must call onOpenDrawer", content.contains("onOpenDrawer()"))
         }
     }
 }
