@@ -344,21 +344,13 @@ class HistoryRepository(private val context: Context) {
 
         fun splitAppNameForDisplay(name: String, maxLineChars: Int = 9): List<String> {
             val clean = name.trim()
-            if (clean.length <= maxLineChars) {
-                return listOf(clean)
+            if (clean.length <= maxLineChars) return listOf(clean)
+            val space = clean.lastIndexOf(' ', maxLineChars)
+            return if (space > 0) {
+                listOf(clean.substring(0, space).trim().take(maxLineChars), clean.substring(space + 1).trim().take(maxLineChars))
+            } else {
+                listOf(clean.take(maxLineChars), clean.drop(maxLineChars).take(maxLineChars))
             }
-
-            val spaceIndex = clean.lastIndexOf(' ', maxLineChars)
-            if (spaceIndex > 0) {
-                val line1 = clean.substring(0, spaceIndex).trim()
-                val line2 = clean.substring(spaceIndex + 1).trim()
-                return listOf(line1.take(maxLineChars), line2.take(maxLineChars))
-            }
-
-            return listOf(
-                clean.take(maxLineChars),
-                clean.drop(maxLineChars).take(maxLineChars)
-            )
         }
 
         fun calculateWpm(totalWords: Long, totalDurationMs: Long): Int {
@@ -377,45 +369,16 @@ class HistoryRepository(private val context: Context) {
         }
 
         fun formatUsageDuration(durationMs: Long): String {
-            val totalSeconds = (durationMs / 1000L).coerceAtLeast(0L)
+            val sec = (durationMs / 1000L).coerceAtLeast(0L)
             return when {
-                // Tier 1: 0 to 59 seconds -> "0 s", "45 s" (spaced)
-                totalSeconds < 60L -> "$totalSeconds s"
-
-                // Tier 2: 1 minute up to 59 minutes -> "1m 0s", "12m 30s"
-                totalSeconds < 3600L -> {
-                    val m = totalSeconds / 60L
-                    val s = totalSeconds % 60L
-                    "${m}m ${s}s"
-                }
-
-                // Tier 3: 1 hour up to 23 hours 59 minutes -> "1h 0m", "3h 28m"
-                totalSeconds < 86400L -> {
-                    val h = totalSeconds / 3600L
-                    val m = (totalSeconds % 3600L) / 60L
-                    "${h}h ${m}m"
-                }
-
-                // Tier 4: 24 hours up to 29 days -> "1 day", "2 days", "3 days"
-                totalSeconds < 2592000L -> {
-                    val days = totalSeconds / 86400L
-                    if (days == 1L) "1 day" else "$days days"
-                }
-
-                // Tier 5: 30 days up to 364 days -> "1m 1d", "3m 12d"
-                totalSeconds < 31536000L -> {
-                    val months = totalSeconds / 2592000L
-                    val days = (totalSeconds % 2592000L) / 86400L
-                    "${months}m ${days}d"
-                }
-
-                // Tier 6: 365 days and beyond -> "1y 1m 1d"
+                sec < 60L -> "$sec s"
+                sec < 3600L -> "${sec / 60L}m ${sec % 60L}s"
+                sec < 86400L -> "${sec / 3600L}h ${(sec % 3600L) / 60L}m"
+                sec < 2592000L -> "${sec / 86400L} day".let { if (sec / 86400L > 1L) "${it}s" else it }
+                sec < 31536000L -> "${sec / 2592000L}m ${(sec % 2592000L) / 86400L}d"
                 else -> {
-                    val years = totalSeconds / 31536000L
-                    val remAfterYear = totalSeconds % 31536000L
-                    val months = remAfterYear / 2592000L
-                    val days = (remAfterYear % 2592000L) / 86400L
-                    "${years}y ${months}m ${days}d"
+                    val rem = sec % 31536000L
+                    "${sec / 31536000L}y ${rem / 2592000L}m ${(rem % 2592000L) / 86400L}d"
                 }
             }
         }

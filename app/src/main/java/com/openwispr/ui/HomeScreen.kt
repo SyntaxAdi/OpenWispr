@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.PersistableBundle
 import android.widget.Toast
 import androidx.compose.foundation.Image
+import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -509,12 +510,7 @@ private fun loadAppIconBitmap(context: Context, packageName: String?): ImageBitm
     }
     return drawable?.let { d ->
         try {
-            val sizePx = 96
-            val bmp = android.graphics.Bitmap.createBitmap(sizePx, sizePx, android.graphics.Bitmap.Config.ARGB_8888)
-            val canvas = android.graphics.Canvas(bmp)
-            d.setBounds(0, 0, sizePx, sizePx)
-            d.draw(canvas)
-            bmp.asImageBitmap()
+            d.toBitmap(96, 96).asImageBitmap()
         } catch (e: Exception) {
             null
         }

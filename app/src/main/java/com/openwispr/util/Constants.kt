@@ -17,15 +17,14 @@ object Constants {
     const val MAX_BUBBLE_OPACITY = 100
     const val SYSTEM_PROMPT = "You are a speech cleaner. Remove stutters, filler words (uh, um, like, you know, ah, hmm), repetitions, rambling and false starts. Fix grammar and punctuation. Preserve original intent and meaning. Return ONLY the cleaned text, no quotes, no explanation, no prefix like 'Message:', 'Here is the cleaned text:', or similar."
 
+    private val PREFIX_RE = Regex("""^(\s*(Message|Cleaned(\s*text)?|Transcription|Output|Result|Refined)\s*[:\-–—]\s*)+""", RegexOption.IGNORE_CASE)
+    private val PREAMBLE_RE = Regex("""^(Here is|Here's|Sure,?\s*here is) (the )?(cleaned|transcribed|corrected|refined).*?:\s*""", RegexOption.IGNORE_CASE)
+
     /** Strip LLM-added prefixes like "Message:", "Cleaned text:" and surrounding quotes. */
     fun sanitizeOutput(text: String): String {
         var t = text.trim()
-        // Remove repeated prefixes "Message:", "Cleaned text:", "Transcription:" etc (case-insensitive)
-        val prefixRe = Regex("""^(\s*(Message|Cleaned(\s*text)?|Transcription|Output|Result|Refined)\s*[:\-–—]\s*)+""", RegexOption.IGNORE_CASE)
-        t = prefixRe.replace(t, "")
-        // Remove "Here is the cleaned..." preamble
-        val preambleRe = Regex("""^(Here is|Here's|Sure,?\s*here is) (the )?(cleaned|transcribed|corrected|refined).*?:\s*""", RegexOption.IGNORE_CASE)
-        t = preambleRe.replace(t, "")
+        t = PREFIX_RE.replace(t, "")
+        t = PREAMBLE_RE.replace(t, "")
         // Trim surrounding quotes / markdown fences
         t = t.trim()
         if (t.startsWith("```")) {

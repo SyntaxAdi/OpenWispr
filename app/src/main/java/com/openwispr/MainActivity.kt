@@ -32,7 +32,6 @@ import com.openwispr.data.HistoryRepository
 import com.openwispr.data.SettingsRepository
 import com.openwispr.ui.HistoryScreen
 import com.openwispr.ui.HomeScreen
-import com.openwispr.ui.InteractiveDrawer
 import com.openwispr.ui.SettingsScreen
 import com.openwispr.ui.SideNavDrawer
 import kotlinx.coroutines.launch
@@ -66,27 +65,32 @@ class MainActivity : ComponentActivity() {
                     onPrimary = Color.White
                 )
             ) {
-                var isDrawerOpen by remember { mutableStateOf(false) }
+                val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+                val scope = rememberCoroutineScope()
                 var currentTab by remember { mutableStateOf(NavTab.Home) }
 
-                InteractiveDrawer(
-                    isOpen = isDrawerOpen,
-                    onOpen = { isDrawerOpen = true },
-                    onClose = { isDrawerOpen = false },
-                    drawerWidth = 300.dp,
+                ModalNavigationDrawer(
+                    drawerState = drawerState,
                     drawerContent = {
-                        SideNavDrawer(
-                            currentTab = currentTab,
-                            onSelectTab = { tab ->
-                                currentTab = tab
-                                isDrawerOpen = false
-                            },
-                            onClose = { isDrawerOpen = false },
-                            isAccessibilityActive = isAccessibilityEnabled(),
-                            hasMicPermission = hasMicPermission(),
-                            isOpen = isDrawerOpen
-                        )
-                    }
+                        ModalDrawerSheet(
+                            drawerContainerColor = Color(0xFF000000),
+                            drawerContentColor = Color.White,
+                            modifier = Modifier.width(300.dp)
+                        ) {
+                            SideNavDrawer(
+                                currentTab = currentTab,
+                                onSelectTab = { tab ->
+                                    currentTab = tab
+                                    scope.launch { drawerState.close() }
+                                },
+                                onClose = { scope.launch { drawerState.close() } },
+                                isAccessibilityActive = isAccessibilityEnabled(),
+                                hasMicPermission = hasMicPermission(),
+                                isOpen = drawerState.isOpen
+                            )
+                        }
+                    },
+                    scrimColor = Color.Black.copy(alpha = 0.65f)
                 ) {
                     Box(
                         modifier = Modifier
@@ -96,12 +100,12 @@ class MainActivity : ComponentActivity() {
                         when (currentTab) {
                             NavTab.Home, NavTab.Stats -> HomeScreen(
                                 historyRepo = history,
-                                onOpenDrawer = { isDrawerOpen = true },
+                                onOpenDrawer = { scope.launch { drawerState.open() } },
                                 onNavigateToHistory = { currentTab = NavTab.History }
                             )
                             NavTab.History -> HistoryScreen(
                                 historyRepo = history,
-                                onOpenDrawer = { isDrawerOpen = true },
+                                onOpenDrawer = { scope.launch { drawerState.open() } },
                                 onBackToHome = { currentTab = NavTab.Home }
                             )
                             NavTab.Settings -> SettingsScreen(
@@ -115,7 +119,7 @@ class MainActivity : ComponentActivity() {
                                 hasMicPermission = { hasMicPermission() },
                                 canDrawOverlays = { Settings.canDrawOverlays(this@MainActivity) },
                                 hasNotifPermission = { hasNotifPermission() },
-                                onOpenDrawer = { isDrawerOpen = true }
+                                onOpenDrawer = { scope.launch { drawerState.open() } }
                             )
                         }
                     }
