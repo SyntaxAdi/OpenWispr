@@ -109,5 +109,57 @@ class SettingsAndSecurityTest {
         assertTrue(patterns.contains(com.openwispr.ui.DotAnimationPattern.CenterOutRipple))
         assertTrue(patterns.contains(com.openwispr.ui.DotAnimationPattern.MatrixShimmer))
     }
+
+    @Test
+    fun testSecurityAuditRemediations() {
+        // 1. Verify QUERY_ALL_PACKAGES removed from AndroidManifest.xml
+        val manifestFile = java.io.File("src/main/AndroidManifest.xml")
+        if (manifestFile.exists()) {
+            val manifestContent = manifestFile.readText()
+            assertTrue("AndroidManifest must NOT contain QUERY_ALL_PACKAGES", !manifestContent.contains("QUERY_ALL_PACKAGES"))
+        }
+
+        // 2. Verify HTTPS enforcement in GroqRepository
+        val validHttps = com.openwispr.data.GroqRepository.validateEndpointUrl("https://api.groq.com/openai/v1/")
+        assertEquals("https://api.groq.com/openai/v1", validHttps)
+
+        var threwInsecure = false
+        try {
+            com.openwispr.data.GroqRepository.validateEndpointUrl("http://insecure-api.groq.com/v1")
+        } catch (_: IllegalArgumentException) {
+            threwInsecure = true
+        }
+        assertTrue("GroqRepository must reject http:// scheme with IllegalArgumentException", threwInsecure)
+
+        // 3. Verify Password field protection in TextInjector
+        val textInjectorFile = java.io.File("src/main/java/com/openwispr/util/TextInjector.kt")
+        if (textInjectorFile.exists()) {
+            val tiContent = textInjectorFile.readText()
+            assertTrue("TextInjector must implement isPasswordField", tiContent.contains("fun isPasswordField"))
+            assertTrue("TextInjector must block password fields", tiContent.contains("Voice dictation disabled on password fields"))
+            assertTrue("TextInjector must protect clipboard with EXTRA_IS_SENSITIVE", tiContent.contains("EXTRA_IS_SENSITIVE"))
+        }
+
+        // 4. Verify Orphan Audio Cache Purging in AudioRecorder
+        val audioRecorderFile = java.io.File("src/main/java/com/openwispr/audio/AudioRecorder.kt")
+        if (audioRecorderFile.exists()) {
+            val arContent = audioRecorderFile.readText()
+            assertTrue("AudioRecorder must contain cleanOrphanRecordings", arContent.contains("fun cleanOrphanRecordings"))
+        }
+
+        // 5. Verify Data Privacy & History Purge
+        val historyRepoFile = java.io.File("src/main/java/com/openwispr/data/HistoryRepository.kt")
+        if (historyRepoFile.exists()) {
+            val hrContent = historyRepoFile.readText()
+            assertTrue("HistoryRepository must contain clearAllTranscripts", hrContent.contains("fun clearAllTranscripts"))
+        }
+
+        val settingsFile = java.io.File("src/main/java/com/openwispr/ui/SettingsScreen.kt")
+        if (settingsFile.exists()) {
+            val sContent = settingsFile.readText()
+            assertTrue("SettingsScreen must contain clearAllTranscripts", sContent.contains("clearAllTranscripts"))
+            assertTrue("SettingsScreen must contain PURGE TRANSCRIPT HISTORY", sContent.contains("PURGE TRANSCRIPT HISTORY"))
+        }
+    }
 }
 

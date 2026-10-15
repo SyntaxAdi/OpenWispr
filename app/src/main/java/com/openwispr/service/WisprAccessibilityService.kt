@@ -21,8 +21,10 @@ class WisprAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        val recorder = AudioRecorder(applicationContext)
+        recorder.cleanOrphanRecordings()
         settings = SettingsRepository(applicationContext)
-        bubble = BubbleManager(this, settings, GroqRepository(), AudioRecorder(applicationContext))
+        bubble = BubbleManager(this, settings, GroqRepository(), recorder)
         createNotifChannel()
     }
 

@@ -78,6 +78,13 @@ class HistoryRepository(private val context: Context) {
         success
     }
 
+    suspend fun clearAllTranscripts(): Boolean = withContext(Dispatchers.IO) {
+        val db = dbHelper.writableDatabase
+        val rows = db.delete(HistoryDatabaseHelper.TABLE_TRANSCRIPTS, null, null)
+        _dataUpdates.tryEmit(Unit)
+        rows >= 0
+    }
+
     suspend fun getRecentTranscripts(limit: Int = 2): List<TranscriptRecord> = withContext(Dispatchers.IO) {
         val db = dbHelper.readableDatabase
         val list = mutableListOf<TranscriptRecord>()

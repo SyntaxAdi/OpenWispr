@@ -15,11 +15,30 @@ sealed class GroqResult<out T> {
 
 class GroqRepository {
 
+    companion object {
+        fun validateEndpointUrl(baseUrl: String): String {
+            val trimmed = baseUrl.trim().trimEnd('/')
+            val url = try { URL(trimmed) } catch (e: Exception) {
+                throw IllegalArgumentException("Invalid endpoint URL: ${e.message}")
+            }
+            if (!url.protocol.equals("https", ignoreCase = true)) {
+                throw IllegalArgumentException("Insecure endpoint rejected: HTTPS protocol is strictly required")
+            }
+            return trimmed
+        }
+    }
+
     suspend fun validateKey(baseUrl: String, apiKey: String): GroqResult<Unit> = withContext(Dispatchers.IO) {
         try {
-            val url = URL("${baseUrl.trimEnd('/')}/models")
+            val endpoint = try {
+                validateEndpointUrl(baseUrl)
+            } catch (e: IllegalArgumentException) {
+                return@withContext GroqResult.Error(e.message ?: "Invalid endpoint")
+            }
+            val url = URL("$endpoint/models")
             val c = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
+                instanceFollowRedirects = false
                 setRequestProperty("Authorization", "Bearer $apiKey")
                 connectTimeout = 12000; readTimeout = 12000
             }
@@ -32,10 +51,16 @@ class GroqRepository {
 
     suspend fun transcribe(baseUrl: String, apiKey: String, whisperModel: String, audioFile: File): GroqResult<String> = withContext(Dispatchers.IO) {
         try {
+            val endpoint = try {
+                validateEndpointUrl(baseUrl)
+            } catch (e: IllegalArgumentException) {
+                return@withContext GroqResult.Error(e.message ?: "Invalid endpoint")
+            }
             val boundary = "----Wispr${System.currentTimeMillis()}"
-            val url = URL("${baseUrl.trimEnd('/')}/audio/transcriptions")
+            val url = URL("$endpoint/audio/transcriptions")
             val c = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
+                instanceFollowRedirects = false
                 doOutput = true
                 setRequestProperty("Authorization", "Bearer $apiKey")
                 setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
@@ -64,9 +89,15 @@ class GroqRepository {
 
     suspend fun refine(baseUrl: String, apiKey: String, llamaModel: String, rawText: String): GroqResult<String> = withContext(Dispatchers.IO) {
         try {
-            val url = URL("${baseUrl.trimEnd('/')}/chat/completions")
+            val endpoint = try {
+                validateEndpointUrl(baseUrl)
+            } catch (e: IllegalArgumentException) {
+                return@withContext GroqResult.Error(e.message ?: "Invalid endpoint")
+            }
+            val url = URL("$endpoint/chat/completions")
             val c = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
+                instanceFollowRedirects = false
                 doOutput = true
                 setRequestProperty("Authorization", "Bearer $apiKey")
                 setRequestProperty("Content-Type", "application/json")

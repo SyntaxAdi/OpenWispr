@@ -10,25 +10,43 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
 
 object TextInjector {
+    fun isPasswordField(node: AccessibilityNodeInfo?): Boolean {
+        if (node == null) return false
+        if (node.isPassword) return true
+        val it = node.inputType
+        val variation = it and 0x00000ff0 // InputType.TYPE_MASK_VARIATION
+        return (it and 0x80) != 0 ||
+            variation == 0x00000080 || // TYPE_TEXT_VARIATION_PASSWORD
+            variation == 0x00000090 || // TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+            variation == 0x000000e0 || // TYPE_TEXT_VARIATION_WEB_PASSWORD
+            variation == 0x00000010    // TYPE_NUMBER_VARIATION_PASSWORD
+    }
+
     fun inject(service: AccessibilityService, text: String): Boolean {
-        var safe = sanitize(text)
         val focused = service.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
             ?: service.rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            ?: findEditableFocused(service.rootInActiveWindow)
+
+        // Security check: Refuse injection and suppress clipboard fallback on secure credential fields
+        if (isPasswordField(focused)) {
+            Toast.makeText(service, "Voice dictation disabled on password fields", Toast.LENGTH_SHORT).show()
+            return false
+        }
+
+        var safe = sanitize(text)
         val hintFocused = focused?.let { getHint(it) }
         if (!hintFocused.isNullOrBlank()) {
             safe = stripHintPrefix(safe, hintFocused)
             safe = sanitize(safe)
         }
         if (focused != null && tryDirect(focused, safe)) return true
-        val fallback = findEditableFocused(service.rootInActiveWindow)
-        if (fallback != null && tryDirect(fallback, safe)) return true
         return copyToClipboard(service, safe)
     }
 
     private fun tryDirect(node: AccessibilityNodeInfo, text: String): Boolean {
         return try {
             if (!node.isEditable) return false
-            if ((node.inputType and 0x80) != 0) return false
+            if (isPasswordField(node)) return false
             val existing = effectiveExisting(node)
             val hint = getHint(node)
             var clean = stripHintPrefix(text, hint)
@@ -99,9 +117,15 @@ object TextInjector {
     fun copyToClipboard(context: Context, text: String): Boolean {
         return try {
             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            var safe = sanitize(text)
-            safe = safe.trim()
-            cm.setPrimaryClip(ClipData.newPlainText("Open Wispr", safe))
+            var safe = sanitize(text).trim()
+            val clip = ClipData.newPlainText("Open Wispr", safe).apply {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    description.extras = android.os.PersistableBundle().apply {
+                        putBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE, true)
+                    }
+                }
+            }
+            cm.setPrimaryClip(clip)
             Toast.makeText(context, "Copied to clipboard - paste in text field", Toast.LENGTH_LONG).show()
             tryPasteFromClipboard(context)
             true

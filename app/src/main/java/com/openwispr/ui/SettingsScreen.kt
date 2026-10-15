@@ -93,6 +93,7 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
     val haptic = LocalHapticFeedback.current
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     var currentSection by remember { mutableStateOf<SettingsSection?>(null) }
     var searchQuery by remember { mutableStateOf("") }
@@ -203,6 +204,12 @@ fun SettingsScreen(
                 title = "System & Runtime Telemetry",
                 description = "App kernel version, Jetpack Compose runtime, KeyStore AES-256 specs",
                 keywords = listOf("telemetry", "system", "kernel", "build", "runtime", "keystore", "specs", "version"),
+                section = SettingsSection.SystemTelemetry
+            ),
+            SearchableSetting(
+                title = "Data Privacy & Purge",
+                description = "Permanently purge all voice dictation transcripts from local database",
+                keywords = listOf("privacy", "purge", "clear", "delete", "history", "database", "transcripts"),
                 section = SettingsSection.SystemTelemetry
             )
         )
@@ -923,6 +930,87 @@ fun SettingsScreen(
                                     TelemetryRow(label = "KEY STORAGE", value = "Android KeyStore Hardware AES-256")
                                     HorizontalDivider(color = ColorBorderSubtle.copy(alpha = 0.5f), thickness = 0.5.dp)
                                     TelemetryRow(label = "CLOUD ROUTE", value = "Groq Cloud API (TLS 1.3)")
+                                }
+                            }
+
+                            // Data Privacy & Purge Card
+                            OledSettingsCard {
+                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "DATA PRIVACY & STORAGE",
+                                            fontSize = 10.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            color = ColorMuted,
+                                            letterSpacing = 0.6.sp
+                                        )
+                                        Text(
+                                            text = "LOCAL ONLY",
+                                            fontSize = 8.5.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = ColorSubtle
+                                        )
+                                    }
+
+                                    Text(
+                                        text = "Voice dictations are stored in private on-device SQLite database. Purging permanently removes all transcript records.",
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = ColorMuted,
+                                        lineHeight = 14.sp
+                                    )
+
+                                    var purging by remember { mutableStateOf(false) }
+                                    var purgeConfirmed by remember { mutableStateOf(false) }
+                                    val historyRepo = remember { com.openwispr.data.HistoryRepository(context) }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(ColorRedAccent.copy(alpha = 0.12f))
+                                                .border(1.dp, ColorRedAccent.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                                                .clickable(enabled = !purging) {
+                                                    purging = true
+                                                    scope.launch {
+                                                        historyRepo.clearAllTranscripts()
+                                                        purging = false
+                                                        purgeConfirmed = true
+                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    }
+                                                }
+                                                .padding(horizontal = 14.dp, vertical = 9.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = if (purging) "PURGING..." else "PURGE TRANSCRIPT HISTORY",
+                                                fontSize = 10.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold,
+                                                color = ColorRedAccent,
+                                                letterSpacing = 0.5.sp
+                                            )
+                                        }
+
+                                        if (purgeConfirmed) {
+                                            Text(
+                                                text = "✓ PURGED",
+                                                fontSize = 10.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }

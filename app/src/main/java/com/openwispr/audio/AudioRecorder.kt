@@ -8,8 +8,22 @@ class AudioRecorder(private val context: Context) {
     private var recorder: MediaRecorder? = null
     private var outFile: File? = null
 
+    fun cleanOrphanRecordings() {
+        try {
+            val dir = context.cacheDir ?: return
+            dir.listFiles { file ->
+                file.name.startsWith("wispr_") && file.name.endsWith(".m4a")
+            }?.forEach { file ->
+                if (file != outFile) {
+                    file.delete()
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
     fun start(): File? {
         try {
+            cleanOrphanRecordings()
             val f = File(context.cacheDir, "wispr_${System.currentTimeMillis()}.m4a")
             @Suppress("DEPRECATION")
             val r = if (android.os.Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else MediaRecorder()
