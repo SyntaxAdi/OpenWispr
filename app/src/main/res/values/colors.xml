@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="primary">#7C4DFF</color>
-    <color name="primary_variant">#5E35B1</color>
+    <color name="primary">#FF2E2E</color>
+    <color name="primary_variant">#CC2020</color>
     <color name="accent_blue">#536DFE</color>
-    <color name="bubble_bg">#7C4DFF</color>
-    <color name="bubble_bg_expanded">#2A2A3A</color>
-    <color name="error_red">#FF5252</color>
-    <color name="success_green">#00C853</color>
+    <color name="bubble_bg">#0D0D11</color>
+    <color name="bubble_bg_expanded">#09090C</color>
+    <color name="error_red">#FF2E2E</color>
+    <color name="success_green">#00E676</color>
 </resources>

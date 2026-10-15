@@ -3,6 +3,7 @@ package com.openwispr.service
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
 import android.view.*
@@ -147,33 +148,35 @@ class BubbleManager(
         }
         val expanded = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
+            gravity = Gravity.CENTER_VERTICAL
             visibility = View.GONE
-            setPadding(6, 6, 6, 6)
+            setPadding(dp(6), dp(6), dp(6), dp(6))
         }
         val close = ImageView(ctx).apply {
             setImageResource(R.drawable.ic_close)
-            setPadding(10, 10, 10, 10)
-            layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
+            background = ctx.getDrawable(R.drawable.bg_bubble_button)
+            setPadding(dp(7), dp(7), dp(7), dp(7))
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
             setOnClickListener { cancelRecording() }
         }
         val wave = WaveformView(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(48), dp(24)).apply { setMargins(4, 0, 4, 0) }
+            layoutParams = LinearLayout.LayoutParams(dp(70), dp(26)).apply { setMargins(dp(4), 0, dp(4), 0) }
         }
         val tickHolder = FrameLayout(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+            background = ctx.getDrawable(R.drawable.bg_bubble_button)
         }
         val tick = ImageView(ctx).apply {
             setImageResource(R.drawable.ic_tick)
-            setPadding(10, 10, 10, 10)
-            layoutParams = FrameLayout.LayoutParams(dp(44), dp(44), Gravity.CENTER)
+            setPadding(dp(7), dp(7), dp(7), dp(7))
+            layoutParams = FrameLayout.LayoutParams(dp(36), dp(36), Gravity.CENTER)
             isClickable = true
             isFocusable = true
         }
         val tickSpin = ProgressBar(ctx, null, android.R.attr.progressBarStyleSmall).apply {
             isIndeterminate = true
             visibility = View.GONE
-            layoutParams = FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER)
+            layoutParams = FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
             indeterminateTintList = android.content.res.ColorStateList.valueOf(0xFFFFFFFF.toInt())
             indeterminateTintMode = android.graphics.PorterDuff.Mode.SRC_IN
             isDuplicateParentStateEnabled = false
@@ -199,8 +202,13 @@ class BubbleManager(
         tick.setOnClickListener(tickClick)
         tickHolder.setOnClickListener(tickClick)
         val status = TextView(ctx).apply {
-            text = ""; textSize = 11f; setTextColor(0xCCFFFFFF.toInt()); visibility = View.GONE
-            setPadding(8, 0, 8, 0)
+            text = ""
+            textSize = 10f
+            setTextColor(0xFF8E95A2.toInt())
+            typeface = android.graphics.Typeface.MONOSPACE
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            setPadding(dp(8), dp(4), dp(8), 0)
         }
         expanded.addView(close)
         expanded.addView(wave)
@@ -326,6 +334,38 @@ class BubbleManager(
         }
     }
 
+    private fun applyDynamicSizes(bubbleDp: Int) {
+        val h = dp(bubbleDp)
+        val btnSize = (h * 0.72f).toInt().coerceAtLeast(dp(28))
+        val btnPadding = (btnSize * 0.20f).toInt().coerceAtLeast(dp(4))
+        val padH = (h * 0.12f).toInt().coerceAtLeast(dp(4))
+        val padV = (h * 0.10f).toInt().coerceAtLeast(dp(3))
+        val waveMargin = (h * 0.08f).toInt().coerceAtLeast(dp(3))
+        val waveW = (h * 1.40f).toInt().coerceAtLeast(dp(54))
+        val waveH = (h * 0.54f).toInt().coerceAtLeast(dp(20))
+        val spinSize = (btnSize * 0.50f).toInt().coerceAtLeast(dp(14))
+
+        expandedGroup?.setPadding(padH, padV, padH, padV)
+
+        closeIcon?.apply {
+            layoutParams = LinearLayout.LayoutParams(btnSize, btnSize)
+            setPadding(btnPadding, btnPadding, btnPadding, btnPadding)
+        }
+
+        waveform?.apply {
+            layoutParams = LinearLayout.LayoutParams(waveW, waveH).apply {
+                setMargins(waveMargin, 0, waveMargin, 0)
+            }
+        }
+
+        tickWrap?.layoutParams = LinearLayout.LayoutParams(btnSize, btnSize)
+        tickIcon?.apply {
+            layoutParams = FrameLayout.LayoutParams(btnSize, btnSize, Gravity.CENTER)
+            setPadding(btnPadding, btnPadding, btnPadding, btnPadding)
+        }
+        tickLoader?.layoutParams = FrameLayout.LayoutParams(spinSize, spinSize, Gravity.CENTER)
+    }
+
     private fun showCollapsedInternal() {
         collapsedGroup?.visibility = View.VISIBLE
         expandedGroup?.visibility = View.GONE
@@ -335,36 +375,58 @@ class BubbleManager(
         tickLoader?.apply { visibility = View.GONE; clearAnimation() }
         tickWrap?.apply { isEnabled = true; alpha = 1f; isClickable = true }
         closeIcon?.apply { isEnabled = true; alpha = 1f; isClickable = true }
-        val sizePx = dp(settings.bubbleDp)
+        val bubbleDp = settings.bubbleDp.coerceIn(Constants.MIN_BUBBLE_DP, Constants.MAX_BUBBLE_DP)
+        val sizePx = dp(bubbleDp)
+        applyDynamicSizes(bubbleDp)
+        collapsedGroup?.layoutParams = LinearLayout.LayoutParams(sizePx, sizePx)
+        val dm = service.resources.displayMetrics
         params?.let { p ->
             p.width = sizePx
             p.height = sizePx
+            p.x = p.x.coerceIn(0, (dm.widthPixels - sizePx).coerceAtLeast(0))
             if (isAttached) try { wm.updateViewLayout(bubbleView, p) } catch (_: Exception) {}
         }
         (bubbleView as? ViewGroup)?.getChildAt(0)?.background = null
-        bubbleView?.alpha = (settings.bubbleOpacity.coerceIn(com.openwispr.util.Constants.MIN_BUBBLE_OPACITY, com.openwispr.util.Constants.MAX_BUBBLE_OPACITY) / 100f)
+        bubbleView?.alpha = (settings.bubbleOpacity.coerceIn(Constants.MIN_BUBBLE_OPACITY, Constants.MAX_BUBBLE_OPACITY) / 100f)
     }
 
     private fun expand() {
         val p = params ?: return
-        val targetW = dp(140)
+        val bubbleDp = settings.bubbleDp.coerceIn(Constants.MIN_BUBBLE_DP, Constants.MAX_BUBBLE_DP)
+        applyDynamicSizes(bubbleDp)
+
+        val targetH = dp(bubbleDp)
+        val padH = (targetH * 0.12f).toInt().coerceAtLeast(dp(4))
+        val btnSize = (targetH * 0.72f).toInt().coerceAtLeast(dp(28))
+        val waveMargin = (targetH * 0.08f).toInt().coerceAtLeast(dp(3))
+        val waveW = (targetH * 1.40f).toInt().coerceAtLeast(dp(54))
+        val targetW = padH * 2 + btnSize * 2 + waveMargin * 2 + waveW
+
         val startW = p.width
         val startH = p.height
-        val actualH = dp(settings.bubbleDp)
+        val startX = p.x
+        val dm = service.resources.displayMetrics
+        val targetX = if (startX + targetW > dm.widthPixels - dp(8)) {
+            (dm.widthPixels - targetW - dp(8)).coerceAtLeast(0)
+        } else startX
+
         val anim = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 220
+            duration = 240
             interpolator = DecelerateInterpolator()
             addUpdateListener {
                 val f = it.animatedValue as Float
                 p.width = (startW + (targetW - startW) * f).toInt()
-                p.height = (startH + (actualH - startH) * f).toInt()
+                p.height = (startH + (targetH - startH) * f).toInt()
+                p.x = (startX + (targetX - startX) * f).toInt()
                 try { wm.updateViewLayout(bubbleView, p) } catch (_: Exception) {}
             }
         }
         anim.start()
         collapsedGroup?.visibility = View.GONE
         expandedGroup?.visibility = View.VISIBLE
-        (bubbleView as? ViewGroup)?.getChildAt(0)?.background = service.getDrawable(R.drawable.bg_expanded)
+        val bg = (service.getDrawable(R.drawable.bg_expanded)?.mutate() as? GradientDrawable)
+        bg?.cornerRadius = targetH / 2f
+        (bubbleView as? ViewGroup)?.getChildAt(0)?.background = bg
     }
 
     private fun startRecording() {
@@ -386,9 +448,11 @@ class BubbleManager(
             override fun run() {
                 if (state != State.Recording) return
                 val amp = recorder.getMaxAmplitude()
-                val norm = (amp / 32767f).coerceIn(0f, 1f)
-                waveform?.setLevel(norm)
-                handler.postDelayed(this, 70)
+                val cleanAmp = (amp - 200).coerceAtLeast(0)
+                val linear = (cleanAmp / 7500f).coerceIn(0f, 1f)
+                val perceptualLevel = kotlin.math.sqrt(linear.toDouble()).toFloat()
+                waveform?.setLevel(perceptualLevel)
+                handler.postDelayed(this, 50)
             }
         }
         handler.post(amplitudeRunnable!!)
