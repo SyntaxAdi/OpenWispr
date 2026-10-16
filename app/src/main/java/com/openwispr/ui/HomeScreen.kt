@@ -40,12 +40,19 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 
@@ -72,37 +79,56 @@ fun HomeScreen(
 
     var stats by remember { mutableStateOf(HomeStats.EMPTY) }
     var transcripts by remember { mutableStateOf<List<TranscriptRecord>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
 
-    fun refreshData() {
-        scope.launch {
-            runCatching {
-                val newStats = historyRepo.getHomeStats()
-                val newRecent = historyRepo.getRecentTranscripts(limit = 2)
-                stats = newStats
-                transcripts = newRecent
-            }
-            isLoading = false
+    val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val navBarPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
+    val pullRefreshState = rememberPullToRefreshState(
+        positionalThreshold = statusBarPadding + 48.dp
+    )
+
+    suspend fun performRefresh() {
+        runCatching {
+            val newStats = historyRepo.getHomeStats()
+            val newRecent = historyRepo.getRecentTranscripts(limit = 2)
+            stats = newStats
+            transcripts = newRecent
         }
     }
 
     LaunchedEffect(historyRepo) {
-        refreshData()
+        performRefresh()
         historyRepo.dataUpdates.collect {
-            refreshData()
+            performRefresh()
         }
     }
 
-    val pullRefreshState = rememberPullToRefreshState()
+    val spinRotation = remember { Animatable(0f) }
+
     if (pullRefreshState.isRefreshing) {
         LaunchedEffect(true) {
-            refreshData()
-            pullRefreshState.endRefresh()
+            spinRotation.snapTo(0f)
+            val refreshDeferred = async(Dispatchers.IO) {
+                val newStats = historyRepo.getHomeStats()
+                val newRecent = historyRepo.getRecentTranscripts(limit = 2)
+                Pair(newStats, newRecent)
+            }
+            try {
+                spinRotation.animateTo(
+                    targetValue = 1080f,
+                    animationSpec = tween(
+                        durationMillis = 1350,
+                        easing = FastOutSlowInEasing
+                    )
+                )
+                val (newStats, newRecent) = refreshDeferred.await()
+                stats = newStats
+                transcripts = newRecent
+            } finally {
+                pullRefreshState.endRefresh()
+            }
         }
     }
-
-    val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val navBarPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     Box(
         modifier = modifier
@@ -114,7 +140,10 @@ fun HomeScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 12.dp)
+                .graphicsLayer {
+                    translationY = pullRefreshState.verticalOffset
+                },
             contentPadding = PaddingValues(
                 top = statusBarPadding + 10.dp,
                 bottom = navBarPadding + 24.dp
@@ -122,19 +151,19 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // 1. Top Header Bar
-            item {
+            item(key = "header") {
                 TopBarHeader(
                     onOpenDrawer = onOpenDrawer
                 )
             }
 
             // 2. Card 01: TOTAL WORDS SPOKEN (Hero Card with 24h Peak Activity)
-            item {
+            item(key = "card_words") {
                 CardTotalWordsSpoken(stats = stats)
             }
 
             // 3. Row of 2 Cards: WEEK STREAK & APPS TRACKED (Twin Heights)
-            item {
+            item(key = "row_streak_apps") {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -151,7 +180,7 @@ fun HomeScreen(
             }
 
             // 4. Row of 2 Cards: SPEAKING SPEED & TOTAL USAGE (Twin Heights)
-            item {
+            item(key = "row_speed_usage") {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -168,7 +197,7 @@ fun HomeScreen(
             }
 
             // 5. Card 06: RECENT DICTATIONS
-            item {
+            item(key = "card_recent") {
                 CardRecentDictations(
                     transcripts = transcripts,
                     onViewAll = onNavigateToHistory,
@@ -191,9 +220,53 @@ fun HomeScreen(
             state = pullRefreshState,
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = statusBarPadding),
+                .graphicsLayer {
+                    alpha = if (pullRefreshState.verticalOffset > 0.5f || pullRefreshState.isRefreshing) 1f else 0f
+                },
             containerColor = ColorCardElevated,
-            contentColor = ColorRedAccent
+            contentColor = ColorRedAccent,
+            indicator = { state ->
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (state.isRefreshing) {
+                        Canvas(modifier = Modifier.size(18.dp)) {
+                            val strokeWidth = 2.5.dp.toPx()
+                            val diameter = size.minDimension - strokeWidth
+                            val topLeft = Offset(strokeWidth / 2f, strokeWidth / 2f)
+                            val arcSize = Size(diameter, diameter)
+
+                            // Subtle red background track ring
+                            drawArc(
+                                color = Color(0x22FF2E2E),
+                                startAngle = 0f,
+                                sweepAngle = 360f,
+                                useCenter = false,
+                                topLeft = topLeft,
+                                size = arcSize,
+                                style = Stroke(width = strokeWidth)
+                            )
+
+                            // Rotating active red arc with rounded ends
+                            drawArc(
+                                color = ColorRedAccent,
+                                startAngle = spinRotation.value,
+                                sweepAngle = 270f,
+                                useCenter = false,
+                                topLeft = topLeft,
+                                size = arcSize,
+                                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                            )
+                        }
+                    } else {
+                        PullToRefreshDefaults.Indicator(
+                            state = state,
+                            color = ColorRedAccent
+                        )
+                    }
+                }
+            }
         )
     }
 }

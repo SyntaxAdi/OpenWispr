@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -15,13 +17,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import com.openwispr.R
 import com.openwispr.data.AppPromptRule
 import com.openwispr.data.FormalityMode
@@ -49,9 +61,11 @@ fun PersonaScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
 
     // State bindings
     var globalMode by remember { mutableStateOf(settings.globalFormalityMode) }
+    var expandedPromptMode by remember { mutableStateOf<FormalityMode?>(settings.globalFormalityMode) }
     var basePromptText by remember { mutableStateOf(settings.customBaseSystemPrompt) }
     var profiles by remember { mutableStateOf(settings.getPromptProfiles()) }
     var activeProfileId by remember { mutableStateOf(settings.activeProfileId) }
@@ -80,17 +94,18 @@ fun PersonaScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 1. Top Header Row
-            item {
-                Row(
+            // 1. Top Header Bar (Canonical Centered Pattern matching Settings & History)
+            item(key = "header") {
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .height(44.dp)
                 ) {
+                    // Left: Menu Squircle Button (44dp)
                     Box(
                         modifier = Modifier
                             .size(44.dp)
+                            .align(Alignment.CenterStart)
                             .clip(RoundedCornerShape(12.dp))
                             .background(ColorCardElevated)
                             .border(1.dp, ColorBorder, RoundedCornerShape(12.dp))
@@ -105,27 +120,29 @@ fun PersonaScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        verticalAlignment = Alignment.CenterVertically
+                    // Center: Dot Matrix Title with safe padding (Zero Clipping Guaranteed)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 56.dp)
+                            .align(Alignment.Center),
+                        contentAlignment = Alignment.Center
                     ) {
                         DotMatrixText(
-                            text = "PERSONA ",
-                            dotSize = 3.4.dp,
-                            dotSpacing = 1.1.dp,
-                            charSpacing = 2.8.dp,
+                            text = "PROMPTS",
+                            dotSize = 2.8.dp,
+                            dotSpacing = 0.9.dp,
+                            charSpacing = 1.8.dp,
                             color = Color.White
                         )
-                        DotMatrixText(
-                            text = "& PROMPTS",
-                            dotSize = 3.4.dp,
-                            dotSpacing = 1.1.dp,
-                            charSpacing = 2.8.dp,
-                            color = ColorRedAccent
-                        )
                     }
+
+                    // Right: Optical Balance Spacer (44dp)
+                    Spacer(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .align(Alignment.CenterEnd)
+                    )
                 }
             }
 
@@ -160,7 +177,17 @@ fun PersonaScreen(
 
                             FormalityMode.values().forEach { mode ->
                                 val isSelected = globalMode == mode
-                                Row(
+                                val isExpanded = expandedPromptMode == mode
+                                val activeProfile = if (mode == FormalityMode.CUSTOM) {
+                                    profiles.firstOrNull { it.id == activeProfileId } ?: profiles.firstOrNull()
+                                } else null
+                                val currentPrompt = when (mode) {
+                                    FormalityMode.DEFAULT -> basePromptText
+                                    FormalityMode.CUSTOM -> activeProfile?.promptText ?: "No custom profile created. Tap '+ NEW PROFILE' below."
+                                    else -> settings.getPromptForMode(mode)
+                                }
+
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(10.dp))
@@ -170,37 +197,89 @@ fun PersonaScreen(
                                             if (isSelected) ColorRedAccent else ColorBorderSubtle,
                                             RoundedCornerShape(10.dp)
                                         )
-                                        .clickable {
-                                            globalMode = mode
-                                            settings.globalFormalityMode = mode
-                                        }
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = mode.displayName.uppercase(),
-                                            fontSize = 13.sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isSelected) Color.White else ColorTextSecondary
-                                        )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = mode.description,
-                                            fontSize = 11.sp,
-                                            color = if (isSelected) ColorTextSecondary else ColorMuted
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                if (globalMode != mode) {
+                                                    globalMode = mode
+                                                    settings.globalFormalityMode = mode
+                                                    expandedPromptMode = mode
+                                                } else {
+                                                    expandedPromptMode = if (isExpanded) null else mode
+                                                }
+                                            }
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = mode.displayName.uppercase(),
+                                                    fontSize = 13.sp,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isSelected) Color.White else ColorTextSecondary
+                                                )
+                                                if (isExpanded) {
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(
+                                                        text = "[INSPECTING]",
+                                                        fontSize = 9.sp,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = ColorRedAccent
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = mode.description,
+                                                fontSize = 11.sp,
+                                                color = if (isSelected) ColorTextSecondary else ColorMuted
+                                            )
+                                        }
+
+                                        Box(
+                                            modifier = Modifier
+                                                .size(16.dp)
+                                                .clip(CircleShape)
+                                                .background(if (isSelected) ColorRedAccent else Color.Transparent)
+                                                .border(1.5.dp, if (isSelected) ColorRedAccent else ColorMuted, CircleShape)
                                         )
                                     }
 
-                                    Box(
-                                        modifier = Modifier
-                                            .size(16.dp)
-                                            .clip(CircleShape)
-                                            .background(if (isSelected) ColorRedAccent else Color.Transparent)
-                                            .border(1.5.dp, if (isSelected) ColorRedAccent else ColorMuted, CircleShape)
-                                    )
+                                    // Sliding Note Drawer
+                                    AnimatedVisibility(
+                                        visible = isExpanded,
+                                        enter = expandVertically(
+                                            animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
+                                        ) + fadeIn(animationSpec = tween(durationMillis = 200)),
+                                        exit = shrinkVertically(
+                                            animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
+                                        ) + fadeOut(animationSpec = tween(durationMillis = 150))
+                                    ) {
+                                        PromptInspectionNote(
+                                            mode = mode,
+                                            promptText = currentPrompt,
+                                            activeCustomProfileName = activeProfile?.name,
+                                            customProfiles = profiles,
+                                            activeCustomProfileId = activeProfileId,
+                                            onSelectCustomProfile = { selectedId ->
+                                                activeProfileId = selectedId
+                                                settings.activeProfileId = selectedId
+                                                globalMode = FormalityMode.CUSTOM
+                                                settings.globalFormalityMode = FormalityMode.CUSTOM
+                                            },
+                                            onAddNewProfileClick = { showAddProfileDialog = true },
+                                            onCopyPrompt = { textToCopy ->
+                                                clipboardManager.setText(AnnotatedString(textToCopy))
+                                                Toast.makeText(context, "Prompt copied to clipboard", Toast.LENGTH_SHORT).show()
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -386,6 +465,8 @@ fun PersonaScreen(
                                             .clickable {
                                                 activeProfileId = profile.id
                                                 settings.activeProfileId = profile.id
+                                                globalMode = FormalityMode.CUSTOM
+                                                settings.globalFormalityMode = FormalityMode.CUSTOM
                                             }
                                             .padding(horizontal = 12.dp, vertical = 10.dp),
                                         verticalAlignment = Alignment.CenterVertically,
@@ -792,9 +873,12 @@ fun PersonaScreen(
                                     name = profileName.trim(),
                                     promptText = profilePrompt.trim()
                                 )
-                                settings.savePromptProfile(newProfile)
+                                settings.savePromptProfile(newProfile, makeActive = true)
                                 profiles = settings.getPromptProfiles()
                                 activeProfileId = newProfile.id
+                                settings.activeProfileId = newProfile.id
+                                globalMode = FormalityMode.CUSTOM
+                                settings.globalFormalityMode = FormalityMode.CUSTOM
                                 showAddProfileDialog = false
                             }
                         }
@@ -811,3 +895,200 @@ fun PersonaScreen(
         }
     }
 }
+
+@Composable
+private fun PromptInspectionNote(
+    mode: FormalityMode,
+    promptText: String,
+    activeCustomProfileName: String?,
+    customProfiles: List<PromptProfile> = emptyList(),
+    activeCustomProfileId: String? = null,
+    onSelectCustomProfile: (String) -> Unit = {},
+    onAddNewProfileClick: () -> Unit = {},
+    onCopyPrompt: (String) -> Unit
+) {
+    var isCopied by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isCopied) {
+        if (isCopied) {
+            delay(1800)
+            isCopied = false
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 10.dp, end = 10.dp, bottom = 10.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF0C0D12))
+            .border(1.dp, ColorBorderSubtle.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // 1. Header: Directive Label + Tactile Copy Button
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "// PROMPT DIRECTIVE",
+                fontSize = 9.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                color = ColorMuted,
+                letterSpacing = 1.sp
+            )
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFF161820))
+                    .border(1.dp, if (isCopied) ColorRedAccent else ColorBorderSubtle, RoundedCornerShape(4.dp))
+                    .clickable {
+                        onCopyPrompt(promptText)
+                        isCopied = true
+                    }
+                    .padding(horizontal = 7.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    text = if (isCopied) "COPIED ✓" else "COPY PROMPT",
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isCopied) ColorRedAccent else ColorTextSecondary
+                )
+            }
+        }
+
+        // Custom Profile Quick Selector
+        if (mode == FormalityMode.CUSTOM) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "SELECT ACTIVE PROFILE:",
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = ColorMuted
+                    )
+                    Text(
+                        text = "+ NEW PROFILE",
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = ColorRedAccent,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable { onAddNewProfileClick() }
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    )
+                }
+
+                if (customProfiles.isNotEmpty()) {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(customProfiles) { prof ->
+                            val isProfActive = prof.id == activeCustomProfileId
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (isProfActive) ColorRedAccent.copy(alpha = 0.2f) else Color(0xFF14141A))
+                                    .border(
+                                        1.dp,
+                                        if (isProfActive) ColorRedAccent else ColorBorderSubtle,
+                                        RoundedCornerShape(6.dp)
+                                    )
+                                    .clickable { onSelectCustomProfile(prof.id) }
+                                    .padding(horizontal = 8.dp, vertical = 5.dp)
+                            ) {
+                                Text(
+                                    text = prof.name,
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = if (isProfActive) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isProfActive) Color.White else ColorTextSecondary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Formatting Badges Row: 50/50 Equal-Width Single-Line Telemetry Spec Cards
+        val (capsBadge, punctBadge) = when (mode) {
+            FormalityMode.FORMAL -> ("Aa CAPS: REQUIRED" to ".,!? PUNCT: FULL")
+            FormalityMode.CASUAL -> ("Aa CAPS: STANDARD" to ".,!? PUNCT: MINIMAL")
+            FormalityMode.FRIENDLY -> ("aa CAPS: NONE" to "Ø PUNCT: NONE")
+            FormalityMode.DEFAULT -> ("Aa CAPS: NATURAL" to ".,!? PUNCT: NATURAL")
+            FormalityMode.CUSTOM -> (
+                "Aa PROFILE: ${activeCustomProfileName?.uppercase() ?: "DEFAULT"}" to
+                "★ RULES: CUSTOM"
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            listOf(capsBadge, punctBadge).forEach { badgeText ->
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(26.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color(0xFF14141A))
+                        .border(0.5.dp, ColorBorderSubtle, RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = badgeText,
+                        fontSize = 8.5.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.SemiBold,
+                        color = ColorTextSecondary,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+
+        // 3. Monospace Prompt Text Box
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(6.dp))
+                .background(Color(0xFF070709))
+                .border(0.5.dp, ColorBorder, RoundedCornerShape(6.dp))
+                .padding(8.dp)
+        ) {
+            Text(
+                text = promptText,
+                fontSize = 10.5.sp,
+                fontFamily = FontFamily.Monospace,
+                lineHeight = 15.sp,
+                color = ColorTextPrimary
+            )
+        }
+
+        // 4. Security & Privacy Reassurance Caption
+        Text(
+            text = "Direct LLM system prompt. Zero telemetry or hidden modifications.",
+            fontSize = 9.sp,
+            fontFamily = FontFamily.Monospace,
+            color = ColorMuted
+        )
+    }
+}
+

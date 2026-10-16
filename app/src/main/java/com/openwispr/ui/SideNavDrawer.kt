@@ -62,7 +62,6 @@ private val ColorBorder = Color(0xFF141416)
 private val ColorBorderSelected = Color(0x66FF2E2E)
 private val ColorMuted = Color(0xFF8E8E93)
 private val ColorRedAccent = Color(0xFFFF2E2E)
-private val ColorGreenAccent = Color(0xFF00E676)
 
 /**
  * Side navigation drawer.
@@ -473,22 +472,19 @@ private fun DrawerTelemetryCard(
             // Status Row 1: Accessibility Service
             TelemetryStatusRow(
                 label = "ACCESSIBILITY",
-                value = if (isAccessibilityActive) "ONLINE" else "STANDBY",
-                dotColor = if (isAccessibilityActive) ColorGreenAccent else ColorRedAccent
+                value = if (isAccessibilityActive) "ONLINE" else "STANDBY"
             )
 
             // Status Row 2: Microphone
             TelemetryStatusRow(
                 label = "MICROPHONE",
-                value = if (hasMicPermission) "READY" else "LOCKED",
-                dotColor = if (hasMicPermission) ColorGreenAccent else Color(0xFFFFB300)
+                value = if (hasMicPermission) "READY" else "LOCKED"
             )
 
             // Status Row 3: Audio Spec
             TelemetryStatusRow(
                 label = "AUDIO PIPE",
-                value = "16 kHz MONO",
-                dotColor = ColorMuted
+                value = "16 kHz MONO"
             )
 
             // Dot-matrix decor bar with 6 looping hardware LED telemetry animations
@@ -506,8 +502,7 @@ private fun DrawerTelemetryCard(
 @Composable
 private fun TelemetryStatusRow(
     label: String,
-    value: String,
-    dotColor: Color
+    value: String
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -520,22 +515,12 @@ private fun TelemetryStatusRow(
             fontFamily = FontFamily.Monospace,
             color = ColorMuted
         )
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(5.dp)
-                    .background(dotColor, CircleShape)
-            )
-            Text(
-                text = value,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                color = Color.White
-            )
-        }
+        Text(
+            text = value,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            color = Color.White
+        )
     }
 }

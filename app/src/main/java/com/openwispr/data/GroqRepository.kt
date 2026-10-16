@@ -92,7 +92,8 @@ class GroqRepository {
         apiKey: String,
         llamaModel: String,
         rawText: String,
-        systemPrompt: String = Constants.SYSTEM_PROMPT
+        systemPrompt: String = Constants.SYSTEM_PROMPT,
+        temperature: Double = 0.2
     ): GroqResult<String> = withContext(Dispatchers.IO) {
         try {
             val endpoint = try {
@@ -111,7 +112,7 @@ class GroqRepository {
             }
             val payload = JSONObject().apply {
                 put("model", llamaModel)
-                put("temperature", 0.2)
+                put("temperature", temperature)
                 put("max_tokens", 2048)
                 put("messages", org.json.JSONArray().apply {
                     put(JSONObject().apply { put("role", "system"); put("content", systemPrompt.ifBlank { Constants.SYSTEM_PROMPT }) })

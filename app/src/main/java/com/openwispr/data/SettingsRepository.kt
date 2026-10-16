@@ -9,6 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.security.KeyStore
 import java.util.Base64
+import java.util.Locale
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -113,7 +114,7 @@ class SettingsRepository(context: Context) {
         } catch (_: Exception) { emptyList() }
     }
 
-    fun savePromptProfile(profile: PromptProfile) {
+    fun savePromptProfile(profile: PromptProfile, makeActive: Boolean = true) {
         val current = getPromptProfiles().toMutableList()
         val idx = current.indexOfFirst { it.id == profile.id }
         if (idx >= 0) {
@@ -130,7 +131,7 @@ class SettingsRepository(context: Context) {
             })
         }
         sp.edit().putString("prompt_profiles_json", arr.toString()).apply()
-        if (activeProfileId == null) {
+        if (makeActive || activeProfileId == null) {
             activeProfileId = profile.id
         }
     }
@@ -200,6 +201,15 @@ class SettingsRepository(context: Context) {
         sp.edit().putString("app_prompt_rules_json", arr.toString()).apply()
     }
 
+    fun getEffectiveFormalityMode(packageName: String?): FormalityMode {
+        val rule = packageName?.let { getAppPromptRules()[it] }
+        return rule?.formalityMode ?: globalFormalityMode
+    }
+
+    fun applyFormalityStyling(text: String, mode: FormalityMode): String {
+        return Companion.applyFormalityStyling(text, mode)
+    }
+
     fun getEffectiveSystemPrompt(packageName: String?): String {
         val rule = packageName?.let { getAppPromptRules()[it] }
         val mode = rule?.formalityMode ?: globalFormalityMode
@@ -218,7 +228,60 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    fun getPromptForMode(mode: FormalityMode): String {
+        return when (mode) {
+            FormalityMode.DEFAULT -> customBaseSystemPrompt
+            FormalityMode.FORMAL -> Constants.FORMALITY_FORMAL_PROMPT
+            FormalityMode.FRIENDLY -> Constants.FORMALITY_FRIENDLY_PROMPT
+            FormalityMode.CASUAL -> Constants.FORMALITY_CASUAL_PROMPT
+            FormalityMode.CUSTOM -> {
+                val profiles = getPromptProfiles()
+                val selected = profiles.firstOrNull { it.id == activeProfileId } ?: profiles.firstOrNull()
+                selected?.promptText?.takeIf { it.isNotBlank() } ?: customBaseSystemPrompt
+            }
+        }
+    }
+
+    fun getActiveCustomProfileName(): String? {
+        val profiles = getPromptProfiles()
+        return (profiles.firstOrNull { it.id == activeProfileId } ?: profiles.firstOrNull())?.name
+    }
+
     companion object {
+        fun applyFormalityStyling(text: String, mode: FormalityMode): String {
+            return when (mode) {
+                FormalityMode.FORMAL -> {
+                    var res = text.trim()
+                    if (res.isNotEmpty() && res[0].isLowerCase()) {
+                        res = res.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+                    }
+                    if (res.isNotEmpty() && !res.last().toString().matches(Regex("""[.!?\"']"""))) {
+                        res = "$res."
+                    }
+                    res
+                }
+                FormalityMode.CASUAL -> {
+                    var res = text.trim()
+                    if (res.isNotEmpty() && res[0].isLowerCase()) {
+                        res = res.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+                    }
+                    // Strip rigid trailing single period for casual chat feel
+                    if (res.endsWith(".") && !res.endsWith("..")) {
+                        res = res.dropLast(1).trim()
+                    }
+                    res
+                }
+                FormalityMode.FRIENDLY -> {
+                    // Strictly no caps + no punctuations
+                    text.lowercase(Locale.getDefault())
+                        .replace(Regex("""[.,!?;:\"'()\\-_]"""), "")
+                        .replace(Regex("""\s+"""), " ")
+                        .trim()
+                }
+                else -> text.trim()
+            }
+        }
+
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val KEY_ALIAS = "openwispr_credential_key"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
@@ -279,9 +342,9 @@ class SettingsRepository(context: Context) {
 
 enum class FormalityMode(val displayName: String, val description: String) {
     DEFAULT("Default", "Standard speech cleaner (preserves original tone)"),
-    FORMAL("Formal", "Polished, professional business English"),
-    FRIENDLY("Friendly", "Warm, approachable, and cordial phrasing"),
-    CASUAL("Casual", "Very relaxed, informal everyday messaging"),
+    FORMAL("Formal", "Polished business English (caps + punctuations)"),
+    CASUAL("Casual", "Relaxed messaging (caps + less punctuation)"),
+    FRIENDLY("Friendly", "Warm chat (no caps + no punctuations)"),
     CUSTOM("Custom Prompt", "Uses selected custom prompt profile")
 }
 

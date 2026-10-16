@@ -16,6 +16,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.openwispr.R
 import com.openwispr.audio.AudioRecorder
+import com.openwispr.data.FormalityMode
 import com.openwispr.data.GroqRepository
 import com.openwispr.data.GroqResult
 import com.openwispr.data.HistoryRepository
@@ -503,6 +504,7 @@ class BubbleManager(
         val durationMs = (System.currentTimeMillis() - recordingStartTimeMs).coerceAtLeast(500L)
         val targetPkg = if (initialAppPackage != "unknown") initialAppPackage else (service.rootInActiveWindow?.packageName?.toString() ?: "unknown")
         val effectivePrompt = settings.getEffectiveSystemPrompt(targetPkg)
+        val effectiveMode = settings.getEffectiveFormalityMode(targetPkg)
         scope.launch {
             val apiKey = settings.apiKey
             val baseUrl = settings.baseUrl
@@ -537,9 +539,10 @@ class BubbleManager(
                 }
                 is GroqResult.Success -> {
                     val raw = tr.data
-                    when (val rf = groq.refine(baseUrl, apiKey, llama, raw, effectivePrompt)) {
+                    val temperature = if (effectiveMode == FormalityMode.CUSTOM) 0.7 else 0.2
+                    when (val rf = groq.refine(baseUrl, apiKey, llama, raw, effectivePrompt, temperature)) {
                         is GroqResult.Error -> {
-                            val safeRaw = Constants.sanitizeOutput(raw)
+                            val safeRaw = settings.applyFormalityStyling(Constants.sanitizeOutput(raw), effectiveMode)
                             historyRepo.insertTranscript(safeRaw, targetPkg, durationMs)
                             withContext(Dispatchers.Main) {
                                 val injected = TextInjector.inject(service, safeRaw)
@@ -554,7 +557,7 @@ class BubbleManager(
                             }
                         }
                         is GroqResult.Success -> {
-                            val clean = rf.data
+                            val clean = settings.applyFormalityStyling(rf.data, effectiveMode)
                             historyRepo.insertTranscript(clean, targetPkg, durationMs)
                             withContext(Dispatchers.Main) {
                                 val injected = TextInjector.inject(service, clean)

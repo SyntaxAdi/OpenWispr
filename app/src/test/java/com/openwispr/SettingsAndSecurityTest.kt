@@ -178,9 +178,81 @@ class SettingsAndSecurityTest {
         assertTrue(modes.contains(com.openwispr.data.FormalityMode.CASUAL))
         assertTrue(modes.contains(com.openwispr.data.FormalityMode.CUSTOM))
 
-        assertTrue(com.openwispr.util.Constants.FORMALITY_FORMAL_PROMPT.contains("formal"))
-        assertTrue(com.openwispr.util.Constants.FORMALITY_FRIENDLY_PROMPT.contains("friendly"))
-        assertTrue(com.openwispr.util.Constants.FORMALITY_CASUAL_PROMPT.contains("casual"))
+        assertTrue(com.openwispr.util.Constants.FORMALITY_FORMAL_PROMPT.contains("capitalization"))
+        assertTrue(com.openwispr.util.Constants.FORMALITY_FORMAL_PROMPT.contains("punctuation"))
+        assertTrue(com.openwispr.util.Constants.FORMALITY_FRIENDLY_PROMPT.contains("NO capitalization"))
+        assertTrue(com.openwispr.util.Constants.FORMALITY_FRIENDLY_PROMPT.contains("NO punctuation"))
+        assertTrue(com.openwispr.util.Constants.FORMALITY_CASUAL_PROMPT.contains("capitalization"))
+        assertTrue(com.openwispr.util.Constants.FORMALITY_CASUAL_PROMPT.contains("less punctuation"))
+    }
+
+    @Test
+    fun testFormalityStylingEnforcement() {
+        // 1. Formal: Caps + Punctuations
+        val formalInput = "please review the report at your earliest convenience"
+        val formalOut = SettingsRepository.applyFormalityStyling(formalInput, com.openwispr.data.FormalityMode.FORMAL)
+        assertEquals("Please review the report at your earliest convenience.", formalOut)
+
+        // 2. Casual: Caps + Less Punctuation (no rigid trailing period)
+        val casualInput = "i will be there in ten minutes."
+        val casualOut = SettingsRepository.applyFormalityStyling(casualInput, com.openwispr.data.FormalityMode.CASUAL)
+        assertEquals("I will be there in ten minutes", casualOut)
+
+        // 3. Friendly: No Caps + No Punctuations
+        val friendlyInput = "Hello, John! How are you doing today?"
+        val friendlyOut = SettingsRepository.applyFormalityStyling(friendlyInput, com.openwispr.data.FormalityMode.FRIENDLY)
+        assertEquals("hello john how are you doing today", friendlyOut)
+    }
+
+    @Test
+    fun testSlidingPromptInspectionStructure() {
+        val personaFile = java.io.File("src/main/java/com/openwispr/ui/PersonaScreen.kt")
+        val content = if (personaFile.exists()) personaFile.readText() else java.io.File("app/src/main/java/com/openwispr/ui/PersonaScreen.kt").readText()
+
+        assertTrue("PersonaScreen must contain PromptInspectionNote", content.contains("PromptInspectionNote"))
+        assertTrue("PersonaScreen must contain expandedPromptMode", content.contains("expandedPromptMode"))
+        assertTrue("PersonaScreen must support animated vertical slide", content.contains("expandVertically") && content.contains("shrinkVertically"))
+        assertTrue("PersonaScreen must contain PROMPT DIRECTIVE header", content.contains("// PROMPT DIRECTIVE"))
+        assertTrue("PersonaScreen must enforce singleLine and no softWrap on spec badges", content.contains("softWrap = false") && content.contains("maxLines = 1"))
+        assertTrue("PersonaScreen must not contain breaking STYLE badge", !content.contains("STYLE: POLISHED"))
+        assertTrue("PersonaScreen must not contain green dot in prompt directive", !content.contains("0xFF00E676"))
+    }
+
+    @Test
+    fun testNoGreenDotsInSideNavDrawer() {
+        val drawerFile = java.io.File("src/main/java/com/openwispr/ui/SideNavDrawer.kt")
+        val content = if (drawerFile.exists()) drawerFile.readText() else java.io.File("app/src/main/java/com/openwispr/ui/SideNavDrawer.kt").readText()
+
+        assertTrue("SideNavDrawer must not contain ColorGreenAccent", !content.contains("ColorGreenAccent"))
+        assertTrue("SideNavDrawer must not contain 0xFF00E676", !content.contains("0xFF00E676"))
+        assertTrue("SideNavDrawer TelemetryStatusRow must display status text directly without dot box", !content.contains("dotColor"))
+    }
+
+    @Test
+    fun testCustomPromptProfilesAndStylingIntegrity() {
+        // 1. Verify custom mode preserves text verbatim in applyFormalityStyling
+        val literaryDostoevsky = "I am a sick man... I am a spiteful man! An unattractive man, I believe."
+        val out = SettingsRepository.applyFormalityStyling(literaryDostoevsky, com.openwispr.data.FormalityMode.CUSTOM)
+        assertEquals(literaryDostoevsky, out)
+
+        // 2. Verify BubbleManager passes 0.7 temperature for CUSTOM and 0.2 for standard modes
+        val bubbleFile = java.io.File("src/main/java/com/openwispr/service/BubbleManager.kt")
+        val bContent = if (bubbleFile.exists()) bubbleFile.readText() else java.io.File("app/src/main/java/com/openwispr/service/BubbleManager.kt").readText()
+        assertTrue("BubbleManager must use 0.7 temperature for CUSTOM mode", bContent.contains("if (effectiveMode == FormalityMode.CUSTOM) 0.7 else 0.2"))
+        assertTrue("BubbleManager must pass temperature into groq.refine", bContent.contains("groq.refine(baseUrl, apiKey, llama, raw, effectivePrompt, temperature)"))
+
+        // 3. Verify GroqRepository.refine supports temperature parameter with default 0.2
+        val groqFile = java.io.File("src/main/java/com/openwispr/data/GroqRepository.kt")
+        val gContent = if (groqFile.exists()) groqFile.readText() else java.io.File("app/src/main/java/com/openwispr/data/GroqRepository.kt").readText()
+        assertTrue("GroqRepository must accept temperature parameter", gContent.contains("temperature: Double = 0.2"))
+        assertTrue("GroqRepository must put temperature in request payload", gContent.contains("put(\"temperature\", temperature)"))
+
+        // 4. Verify PersonaScreen auto-activates FormalityMode.CUSTOM on profile selection & creation
+        val personaFile = java.io.File("src/main/java/com/openwispr/ui/PersonaScreen.kt")
+        val pContent = if (personaFile.exists()) personaFile.readText() else java.io.File("app/src/main/java/com/openwispr/ui/PersonaScreen.kt").readText()
+        assertTrue("PersonaScreen must update globalFormalityMode to CUSTOM on profile select", pContent.contains("settings.globalFormalityMode = FormalityMode.CUSTOM"))
+        assertTrue("PersonaScreen PromptInspectionNote must contain SELECT ACTIVE PROFILE quick selector", pContent.contains("SELECT ACTIVE PROFILE:"))
+        assertTrue("PersonaScreen PromptInspectionNote must provide + NEW PROFILE button", pContent.contains("+ NEW PROFILE"))
     }
 }
 
