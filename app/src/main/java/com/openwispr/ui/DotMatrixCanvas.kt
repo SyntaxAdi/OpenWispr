@@ -292,9 +292,6 @@ fun DotHourlyTimelineGraph(
 }
 
 /**
- * 4x4 matrix for Card 03 (Apps Tracked) with active green LED dots
- */
-/**
  * Dotted Nothing OS Flame for Card 02 (Week Streak).
  * Permanent design matching reference mockup with red LED dot matrix silhouette.
  */

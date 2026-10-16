@@ -161,5 +161,26 @@ class SettingsAndSecurityTest {
             assertTrue("SettingsScreen must contain PURGE TRANSCRIPT HISTORY", sContent.contains("PURGE TRANSCRIPT HISTORY"))
         }
     }
+
+    @Test
+    fun testMaxRecordingDurationUpTo600Seconds() {
+        assertEquals(15, com.openwispr.util.Constants.MIN_REC_SEC)
+        assertEquals(600, com.openwispr.util.Constants.MAX_REC_SEC)
+    }
+
+    @Test
+    fun testFormalityModeAndPrompts() {
+        val modes = com.openwispr.data.FormalityMode.values()
+        assertEquals(5, modes.size)
+        assertTrue(modes.contains(com.openwispr.data.FormalityMode.DEFAULT))
+        assertTrue(modes.contains(com.openwispr.data.FormalityMode.FORMAL))
+        assertTrue(modes.contains(com.openwispr.data.FormalityMode.FRIENDLY))
+        assertTrue(modes.contains(com.openwispr.data.FormalityMode.CASUAL))
+        assertTrue(modes.contains(com.openwispr.data.FormalityMode.CUSTOM))
+
+        assertTrue(com.openwispr.util.Constants.FORMALITY_FORMAL_PROMPT.contains("formal"))
+        assertTrue(com.openwispr.util.Constants.FORMALITY_FRIENDLY_PROMPT.contains("friendly"))
+        assertTrue(com.openwispr.util.Constants.FORMALITY_CASUAL_PROMPT.contains("casual"))
+    }
 }
 

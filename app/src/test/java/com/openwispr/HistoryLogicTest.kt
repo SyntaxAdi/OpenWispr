@@ -225,7 +225,6 @@ class HistoryLogicTest {
         assertEquals(0, empty.weekStreak)
         assertEquals(0, empty.activeAppsCount)
         assertEquals(0, empty.wordsPerMinute)
-        assertEquals(0L, empty.totalUsageMinutes)
         assertEquals(0L, empty.totalDurationMs)
         assertEquals("0 s", empty.formattedTotalUsage)
         assertEquals("--", empty.mostUsedAppName)

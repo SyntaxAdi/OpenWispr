@@ -1,12 +1,9 @@
 package com.openwispr.ui
 
-import android.content.ClipData
-import android.content.ClipDescription
-import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
-import android.os.PersistableBundle
 import android.widget.Toast
+import com.openwispr.util.TextInjector
 import androidx.compose.foundation.Image
 import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.foundation.background
@@ -47,6 +44,10 @@ import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 
 // Deep OLED Pitch Black Palette
 private val ColorDarkBg = Color(0xFF000000)
@@ -58,6 +59,7 @@ private val ColorGreenAccent = Color(0xFF00E676)
 private val ColorMuted = Color(0xFF8E95A2)
 private val ColorSubtle = Color(0xFF555B66)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     historyRepo: HistoryRepository,
@@ -91,13 +93,23 @@ fun HomeScreen(
         }
     }
 
+    val pullRefreshState = rememberPullToRefreshState()
+    if (pullRefreshState.isRefreshing) {
+        LaunchedEffect(true) {
+            refreshData()
+            pullRefreshState.endRefresh()
+        }
+    }
+
+    val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val navBarPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(ColorDarkBg)
+            .nestedScroll(pullRefreshState.nestedScrollConnection)
     ) {
-        val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-        val navBarPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
         LazyColumn(
             modifier = Modifier
@@ -161,18 +173,7 @@ fun HomeScreen(
                     transcripts = transcripts,
                     onViewAll = onNavigateToHistory,
                     onCopy = { text ->
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        val clip = ClipData.newPlainText("Transcription", text).apply {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                description.extras = PersistableBundle().apply {
-                                    putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
-                                }
-                            }
-                        }
-                        clipboard.setPrimaryClip(clip)
-                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                        }
+                        TextInjector.copyTranscription(context, text)
                     },
                     onDelete = { id ->
                         scope.launch {
@@ -185,6 +186,15 @@ fun HomeScreen(
                 )
             }
         }
+
+        PullToRefreshContainer(
+            state = pullRefreshState,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = statusBarPadding),
+            containerColor = ColorCardElevated,
+            contentColor = ColorRedAccent
+        )
     }
 }
 

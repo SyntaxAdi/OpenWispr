@@ -24,12 +24,10 @@ data class HomeStats(
     val weekStreak: Int = 0,
     val activeAppsCount: Int = 0,
     val wordsPerMinute: Int = 0,
-    val totalUsageMinutes: Long = 0L,
     val totalDurationMs: Long = 0L,
     val formattedTotalUsage: String = "0 s",
     val mostUsedAppPackage: String? = null,
     val mostUsedAppName: String = "--",
-    val mostUsedAppWords: Long = 0L,
     val mostUsedAppPercentage: Int = 0,
     val activeWeekdays: Set<Int> = emptySet(), // 0=Sunday, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
     val hourlyActivityCounts: Map<Int, Long> = emptyMap(), // 0..23 hours
@@ -277,7 +275,6 @@ class HistoryRepository(private val context: Context) {
         // 6. Words per minute (WPM) strictly from real recorded duration and words
         val wpm = calculateWpm(totalWords, totalDurationMs)
 
-        val totalMinutes = (totalDurationMs / 60000L).coerceAtLeast(0L)
         val formattedUsage = formatUsageDuration(totalDurationMs)
 
         HomeStats(
@@ -285,12 +282,10 @@ class HistoryRepository(private val context: Context) {
             weekStreak = weekStreak,
             activeAppsCount = activeAppsCount,
             wordsPerMinute = wpm,
-            totalUsageMinutes = totalMinutes,
             totalDurationMs = totalDurationMs,
             formattedTotalUsage = formattedUsage,
             mostUsedAppPackage = mostUsedAppPackage,
             mostUsedAppName = mostUsedAppName,
-            mostUsedAppWords = mostUsedAppWords,
             mostUsedAppPercentage = mostUsedPercentage,
             activeWeekdays = activeWeekdays,
             hourlyActivityCounts = hourlyCounts,

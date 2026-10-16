@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Chat bubble outline with rounded corners -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M 4,5 C 4,3.9 4.9,3 6,3 L 18,3 C 19.1,3 20,3.9 20,5 L 20,15 C 20,16.1 19.1,17 18,17 L 8,17 L 4,21 Z" />
+    <!-- Horizontal text / soundwave lines -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:pathData="M 8,8 H 16 M 8,12 H 13" />
+    <!-- Nothing Red terminal accent dot -->
+    <path
+        android:fillColor="#FF2E2E"
+        android:pathData="M 16,12 A 1.1,1.1 0 1,1 15.99,12 Z" />
+</vector>

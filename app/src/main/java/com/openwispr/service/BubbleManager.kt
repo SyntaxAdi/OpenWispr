@@ -54,6 +54,7 @@ class BubbleManager(
     private var isAttached = false
     private var isKeyboardOpen = false
     private var isLayoutUpdatePending = false
+    private var initialAppPackage: String = "unknown"
 
     enum class State { Idle, Recording, Processing }
 
@@ -286,7 +287,6 @@ class BubbleManager(
                         val mid = dm.widthPixels / 2
                         val targetX = if (p.x + p.width / 2 < mid) margin else dm.widthPixels - p.width - margin
                         val startX = p.x
-                        val finalY = p.y
                         if (startX != targetX) {
                             snapAnimator = ValueAnimator.ofInt(startX, targetX).apply {
                                 duration = 180
@@ -298,7 +298,6 @@ class BubbleManager(
                             }
                             snapAnimator?.start()
                         }
-                        settings.setBubblePos(targetX, finalY)
                     } else {
                         if (System.currentTimeMillis() - downTime < 600) {
                             startRecording()
@@ -434,6 +433,7 @@ class BubbleManager(
         val file = recorder.start()
         if (file == null) { Toast.makeText(service, "Mic permission needed / failed to start", Toast.LENGTH_SHORT).show(); return }
         recordingStartTimeMs = System.currentTimeMillis()
+        initialAppPackage = service.rootInActiveWindow?.packageName?.toString() ?: "unknown"
         state = State.Recording
         expand()
         if (!isAttached) { try { wm.addView(bubbleView, params); isAttached = true } catch (_: Exception) {} }
@@ -501,7 +501,8 @@ class BubbleManager(
             return
         }
         val durationMs = (System.currentTimeMillis() - recordingStartTimeMs).coerceAtLeast(500L)
-        val targetPkg = service.rootInActiveWindow?.packageName?.toString() ?: "unknown"
+        val targetPkg = if (initialAppPackage != "unknown") initialAppPackage else (service.rootInActiveWindow?.packageName?.toString() ?: "unknown")
+        val effectivePrompt = settings.getEffectiveSystemPrompt(targetPkg)
         scope.launch {
             val apiKey = settings.apiKey
             val baseUrl = settings.baseUrl
@@ -536,7 +537,7 @@ class BubbleManager(
                 }
                 is GroqResult.Success -> {
                     val raw = tr.data
-                    when (val rf = groq.refine(baseUrl, apiKey, llama, raw)) {
+                    when (val rf = groq.refine(baseUrl, apiKey, llama, raw, effectivePrompt)) {
                         is GroqResult.Error -> {
                             val safeRaw = Constants.sanitizeOutput(raw)
                             historyRepo.insertTranscript(safeRaw, targetPkg, durationMs)

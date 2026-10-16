@@ -8,36 +8,30 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.text.TextUtils
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.openwispr.data.GroqRepository
 import com.openwispr.data.HistoryRepository
 import com.openwispr.data.SettingsRepository
 import com.openwispr.ui.HistoryScreen
 import com.openwispr.ui.HomeScreen
+import com.openwispr.ui.PersonaScreen
 import com.openwispr.ui.SettingsScreen
 import com.openwispr.ui.SideNavDrawer
 import kotlinx.coroutines.launch
 
 enum class NavTab {
-    Home, History, Stats, Settings
+    Home, History, Persona, Settings
 }
 
 class MainActivity : ComponentActivity() {
@@ -98,7 +92,7 @@ class MainActivity : ComponentActivity() {
                             .background(Color(0xFF000000))
                     ) {
                         when (currentTab) {
-                            NavTab.Home, NavTab.Stats -> HomeScreen(
+                            NavTab.Home -> HomeScreen(
                                 historyRepo = history,
                                 onOpenDrawer = { scope.launch { drawerState.open() } },
                                 onNavigateToHistory = { currentTab = NavTab.History }
@@ -107,6 +101,10 @@ class MainActivity : ComponentActivity() {
                                 historyRepo = history,
                                 onOpenDrawer = { scope.launch { drawerState.open() } },
                                 onBackToHome = { currentTab = NavTab.Home }
+                            )
+                            NavTab.Persona -> PersonaScreen(
+                                settings = settings,
+                                onOpenDrawer = { scope.launch { drawerState.open() } }
                             )
                             NavTab.Settings -> SettingsScreen(
                                 settings = settings,

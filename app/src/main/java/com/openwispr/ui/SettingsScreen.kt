@@ -883,6 +883,7 @@ fun SettingsScreen(
 
                                 // 3. Max Recording Duration Slider (Redesigned per Req 8)
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    val durationLabel = if (maxSec < 60) "${maxSec} SEC" else if (maxSec % 60 == 0) "${maxSec / 60} MIN" else "${maxSec / 60}M ${maxSec % 60}S"
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -897,7 +898,7 @@ fun SettingsScreen(
                                             letterSpacing = 0.6.sp
                                         )
                                         Text(
-                                            text = "${maxSec} SEC",
+                                            text = durationLabel,
                                             fontSize = 11.sp,
                                             fontFamily = FontFamily.Monospace,
                                             fontWeight = FontWeight.Bold,
@@ -912,9 +913,9 @@ fun SettingsScreen(
                                             settings.maxSec = maxSec
                                         },
                                         valueRange = Constants.MIN_REC_SEC.toFloat()..Constants.MAX_REC_SEC.toFloat(),
-                                        steps = 7,
+                                        steps = 38,
                                         leftLabel = "15s",
-                                        rightLabel = "120s"
+                                        rightLabel = "10m"
                                     )
                                 }
                             }

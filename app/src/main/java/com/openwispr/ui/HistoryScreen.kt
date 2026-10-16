@@ -1,12 +1,9 @@
 package com.openwispr.ui
 
-import android.content.ClipData
-import android.content.ClipDescription
-import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
-import android.os.PersistableBundle
 import android.widget.Toast
+import com.openwispr.util.TextInjector
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -334,18 +331,7 @@ fun HistoryScreen(
                                             .background(Color(0xFF14151C))
                                             .border(0.8.dp, ColorBorder, RoundedCornerShape(5.dp))
                                             .clickable {
-                                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                                val clip = ClipData.newPlainText("Transcription", item.text).apply {
-                                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                                        description.extras = PersistableBundle().apply {
-                                                            putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
-                                                        }
-                                                    }
-                                                }
-                                                clipboard.setPrimaryClip(clip)
-                                                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-                                                    Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                                                }
+                                                TextInjector.copyTranscription(context, item.text)
                                             }
                                             .padding(horizontal = 7.dp, vertical = 3.dp),
                                         contentAlignment = Alignment.Center
@@ -420,25 +406,9 @@ fun HistoryScreen(
 }
 
 private fun groupTranscriptsByDate(items: List<TranscriptRecord>): Map<String, List<TranscriptRecord>> {
-    val calToday = Calendar.getInstance().apply {
-        set(Calendar.HOUR_OF_DAY, 0)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-    }
-    val todayStartMs = calToday.timeInMillis
-
+    val todayStartMs = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
     val dateFormat = SimpleDateFormat("MMM d, yyyy", Locale.US)
-    val map = linkedMapOf<String, MutableList<TranscriptRecord>>()
-
-    items.forEach { record ->
-        val header = if (record.timestampMs >= todayStartMs) {
-            "Today"
-        } else {
-            dateFormat.format(Date(record.timestampMs))
-        }
-        map.getOrPut(header) { mutableListOf() }.add(record)
-    }
-
-    return map
+    return items.groupBy { if (it.timestampMs >= todayStartMs) "Today" else dateFormat.format(Date(it.timestampMs)) }
 }

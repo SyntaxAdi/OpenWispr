@@ -6,6 +6,7 @@ import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.sin
 
@@ -97,17 +98,40 @@ class WaveformView @JvmOverloads constructor(c: Context, attrs: AttributeSet? = 
 
             // Pass 2: Draw brilliant white voice waveform directly OVER the grey waveform
             if (isSpeaking) {
-                val distFromPeak = abs(i - 6.8f)
-                val voiceBell = (1.0f - (distFromPeak / 3.0f)).coerceAtLeast(0f)
-                if (voiceBell > 0.05f) {
-                    val vocalFluctuation = sin(phase * 2.2f + i * 1.5f).toFloat() * 0.14f
-                    val voiceNorm = (level * voiceBell * (0.92f + vocalFluctuation)).coerceIn(0f, 1f)
-                    if (voiceNorm > 0.20f) {
-                        val whiteH = (voiceNorm * (h * 0.88f)).coerceAtLeast(greyH + 2.5f * density)
-                        val topWhite = centerY - whiteH / 2f
-                        val bottomWhite = centerY + whiteH / 2f
-                        canvas.drawLine(x, topWhite, x, bottomWhite, paintWhite)
-                    }
+                // Peak 1: Left-center vocal fundamental wave (undulates dynamically between i=4.5 and i=6.5)
+                val peak1Center = 5.6f + sin(phase * 1.4f).toFloat() * 1.0f
+                val distPeak1 = abs(i.toFloat() - peak1Center)
+                val bell1 = (1.0f - (distPeak1 / 3.2f)).coerceAtLeast(0f) * (level * 0.95f)
+
+                // Peak 2: Right-side formant & harmonic wave (undulates between i=11.0 and i=13.5)
+                val peak2Center = 12.2f + cos(phase * 1.7f).toFloat() * 1.2f
+                val distPeak2 = abs(i.toFloat() - peak2Center)
+                val bell2 = (1.0f - (distPeak2 / 3.0f)).coerceAtLeast(0f) * (level * 0.88f)
+
+                // Corner 1: Leftmost edge exciter (bars 0..2) flares dynamically during vocal cadences
+                val leftCornerFlare = if (i <= 2) {
+                    val pulse = (sin(phase * 2.6f).toFloat() * 0.5f + 0.5f) * level
+                    val dist = i.toFloat()
+                    (1.0f - dist / 2.5f).coerceAtLeast(0f) * pulse * 0.90f
+                } else 0f
+
+                // Corner 2: Rightmost edge exciter (bars 15..17) flares dynamically in counterpoint
+                val rightCornerFlare = if (i >= 15) {
+                    val pulse = (cos(phase * 2.9f + 0.8f).toFloat() * 0.5f + 0.5f) * level
+                    val dist = (17 - i).toFloat()
+                    (1.0f - dist / 2.5f).coerceAtLeast(0f) * pulse * 0.90f
+                } else 0f
+
+                // Harmonic traveling wave linking the entire stereo field
+                val travelingRipple = (sin(phase * 2.1f - i.toFloat() * 0.65f).toFloat() * 0.18f).coerceAtLeast(0f) * level
+
+                val voiceNorm = (bell1 + bell2 + leftCornerFlare + rightCornerFlare + travelingRipple).coerceIn(0f, 1f)
+
+                if (voiceNorm > 0.16f) {
+                    val whiteH = (voiceNorm * (h * 0.88f)).coerceAtLeast(greyH + 2.0f * density)
+                    val topWhite = centerY - whiteH / 2f
+                    val bottomWhite = centerY + whiteH / 2f
+                    canvas.drawLine(x, topWhite, x, bottomWhite, paintWhite)
                 }
             }
         }

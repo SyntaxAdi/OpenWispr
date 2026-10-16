@@ -33,11 +33,11 @@ object TextInjector {
             return false
         }
 
-        var safe = sanitize(text)
+        var safe = Constants.sanitizeOutput(text)
         val hintFocused = focused?.let { getHint(it) }
         if (!hintFocused.isNullOrBlank()) {
             safe = stripHintPrefix(safe, hintFocused)
-            safe = sanitize(safe)
+            safe = Constants.sanitizeOutput(safe)
         }
         if (focused != null && tryDirect(focused, safe)) return true
         return copyToClipboard(service, safe)
@@ -50,7 +50,7 @@ object TextInjector {
             val existing = effectiveExisting(node)
             val hint = getHint(node)
             var clean = stripHintPrefix(text, hint)
-            clean = sanitize(clean)
+            clean = Constants.sanitizeOutput(clean)
             if (clean.isEmpty()) return false
             val needsSpace = !existing.isNullOrEmpty() &&
                 !existing.endsWith(" ") && !existing.endsWith("\n") &&
@@ -112,12 +112,29 @@ object TextInjector {
         return text
     }
 
-    private fun sanitize(t: String): String = Constants.sanitizeOutput(t)
+    fun copyTranscription(context: Context, text: String): Boolean {
+        return try {
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val safe = Constants.sanitizeOutput(text).trim()
+            val clip = ClipData.newPlainText("Transcription", safe).apply {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    description.extras = android.os.PersistableBundle().apply {
+                        putBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE, true)
+                    }
+                }
+            }
+            cm.setPrimaryClip(clip)
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+            }
+            true
+        } catch (_: Exception) { false }
+    }
 
     fun copyToClipboard(context: Context, text: String): Boolean {
         return try {
             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            var safe = sanitize(text).trim()
+            val safe = Constants.sanitizeOutput(text).trim()
             val clip = ClipData.newPlainText("Open Wispr", safe).apply {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     description.extras = android.os.PersistableBundle().apply {

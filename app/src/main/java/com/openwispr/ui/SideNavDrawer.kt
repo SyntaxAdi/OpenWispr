@@ -182,8 +182,18 @@ fun SideNavDrawer(
                     title = "HOME",
                     subtitle = "Telemetry & statistics",
                     iconRes = R.drawable.ic_home,
-                    isSelected = currentTab == NavTab.Home || currentTab == NavTab.Stats,
+                    isSelected = currentTab == NavTab.Home,
                     onClick = { onSelectTab(NavTab.Home) }
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                SideNavCardItem(
+                    title = "PROMPTS",
+                    subtitle = "Tone & prompt rules",
+                    iconRes = R.drawable.ic_prompt,
+                    isSelected = currentTab == NavTab.Persona,
+                    onClick = { onSelectTab(NavTab.Persona) }
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))

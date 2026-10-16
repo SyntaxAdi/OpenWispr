@@ -87,7 +87,13 @@ class GroqRepository {
         } catch (e: Exception) { GroqResult.Error(e.message ?: "Transcribe failed") }
     }
 
-    suspend fun refine(baseUrl: String, apiKey: String, llamaModel: String, rawText: String): GroqResult<String> = withContext(Dispatchers.IO) {
+    suspend fun refine(
+        baseUrl: String,
+        apiKey: String,
+        llamaModel: String,
+        rawText: String,
+        systemPrompt: String = Constants.SYSTEM_PROMPT
+    ): GroqResult<String> = withContext(Dispatchers.IO) {
         try {
             val endpoint = try {
                 validateEndpointUrl(baseUrl)
@@ -108,7 +114,7 @@ class GroqRepository {
                 put("temperature", 0.2)
                 put("max_tokens", 2048)
                 put("messages", org.json.JSONArray().apply {
-                    put(JSONObject().apply { put("role", "system"); put("content", Constants.SYSTEM_PROMPT) })
+                    put(JSONObject().apply { put("role", "system"); put("content", systemPrompt.ifBlank { Constants.SYSTEM_PROMPT }) })
                     put(JSONObject().apply { put("role", "user"); put("content", rawText) })
                 })
             }.toString()

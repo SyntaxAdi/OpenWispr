@@ -5,6 +5,8 @@ import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import com.openwispr.util.Constants
+import org.json.JSONArray
+import org.json.JSONObject
 import java.security.KeyStore
 import java.util.Base64
 import javax.crypto.Cipher
@@ -73,16 +75,147 @@ class SettingsRepository(context: Context) {
         get() = sp.getInt("max_sec", Constants.DEFAULT_MAX_SEC)
         set(v) = sp.edit().putInt("max_sec", v.coerceIn(Constants.MIN_REC_SEC, Constants.MAX_REC_SEC)).apply()
 
-    var bubbleX: Int
-        get() = sp.getInt("bubble_x", Int.MIN_VALUE)
-        private set(v) = sp.edit().putInt("bubble_x", v).apply()
+    var customBaseSystemPrompt: String
+        get() = sp.getString("custom_system_prompt", Constants.SYSTEM_PROMPT) ?: Constants.SYSTEM_PROMPT
+        set(v) = sp.edit().putString("custom_system_prompt", v.trim()).apply()
 
-    var bubbleY: Int
-        get() = sp.getInt("bubble_y", Int.MIN_VALUE)
-        private set(v) = sp.edit().putInt("bubble_y", v).apply()
+    fun resetBaseSystemPrompt() {
+        sp.edit().putString("custom_system_prompt", Constants.SYSTEM_PROMPT).apply()
+    }
 
-    fun setBubblePos(x: Int, y: Int) {
-        sp.edit().putInt("bubble_x", x).putInt("bubble_y", y).apply()
+    var globalFormalityMode: FormalityMode
+        get() {
+            val name = sp.getString("global_formality_mode", FormalityMode.DEFAULT.name)
+            return try { FormalityMode.valueOf(name ?: FormalityMode.DEFAULT.name) } catch (_: Exception) { FormalityMode.DEFAULT }
+        }
+        set(v) = sp.edit().putString("global_formality_mode", v.name).apply()
+
+    var activeProfileId: String?
+        get() = sp.getString("active_profile_id", null)
+        set(v) = sp.edit().putString("active_profile_id", v).apply()
+
+    fun getPromptProfiles(): List<PromptProfile> {
+        val raw = sp.getString("prompt_profiles_json", "[]") ?: "[]"
+        return try {
+            val arr = JSONArray(raw)
+            val list = mutableListOf<PromptProfile>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                list.add(
+                    PromptProfile(
+                        id = obj.getString("id"),
+                        name = obj.getString("name"),
+                        promptText = obj.getString("promptText")
+                    )
+                )
+            }
+            list
+        } catch (_: Exception) { emptyList() }
+    }
+
+    fun savePromptProfile(profile: PromptProfile) {
+        val current = getPromptProfiles().toMutableList()
+        val idx = current.indexOfFirst { it.id == profile.id }
+        if (idx >= 0) {
+            current[idx] = profile
+        } else {
+            current.add(profile)
+        }
+        val arr = JSONArray()
+        current.forEach { p ->
+            arr.put(JSONObject().apply {
+                put("id", p.id)
+                put("name", p.name)
+                put("promptText", p.promptText)
+            })
+        }
+        sp.edit().putString("prompt_profiles_json", arr.toString()).apply()
+        if (activeProfileId == null) {
+            activeProfileId = profile.id
+        }
+    }
+
+    fun deletePromptProfile(profileId: String) {
+        val current = getPromptProfiles().filterNot { it.id == profileId }
+        val arr = JSONArray()
+        current.forEach { p ->
+            arr.put(JSONObject().apply {
+                put("id", p.id)
+                put("name", p.name)
+                put("promptText", p.promptText)
+            })
+        }
+        sp.edit().putString("prompt_profiles_json", arr.toString()).apply()
+        if (activeProfileId == profileId) {
+            activeProfileId = current.firstOrNull()?.id
+        }
+    }
+
+    fun getAppPromptRules(): Map<String, AppPromptRule> {
+        val raw = sp.getString("app_prompt_rules_json", "[]") ?: "[]"
+        return try {
+            val arr = JSONArray(raw)
+            val map = mutableMapOf<String, AppPromptRule>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val mode = try {
+                    FormalityMode.valueOf(obj.getString("formalityMode"))
+                } catch (_: Exception) { FormalityMode.DEFAULT }
+                val rule = AppPromptRule(
+                    packageName = obj.getString("packageName"),
+                    appName = obj.optString("appName", obj.getString("packageName")),
+                    formalityMode = mode,
+                    customProfileId = if (obj.has("customProfileId") && !obj.isNull("customProfileId")) {
+                        obj.getString("customProfileId").takeIf { it.isNotBlank() }
+                    } else null
+                )
+                map[rule.packageName] = rule
+            }
+            map
+        } catch (_: Exception) { emptyMap() }
+    }
+
+    fun saveAppPromptRule(rule: AppPromptRule) {
+        val current = getAppPromptRules().toMutableMap()
+        current[rule.packageName] = rule
+        saveAppRulesList(current.values)
+    }
+
+    fun deleteAppPromptRule(packageName: String) {
+        val current = getAppPromptRules().toMutableMap()
+        current.remove(packageName)
+        saveAppRulesList(current.values)
+    }
+
+    private fun saveAppRulesList(rules: Collection<AppPromptRule>) {
+        val arr = JSONArray()
+        rules.forEach { r ->
+            arr.put(JSONObject().apply {
+                put("packageName", r.packageName)
+                put("appName", r.appName)
+                put("formalityMode", r.formalityMode.name)
+                r.customProfileId?.let { put("customProfileId", it) }
+            })
+        }
+        sp.edit().putString("app_prompt_rules_json", arr.toString()).apply()
+    }
+
+    fun getEffectiveSystemPrompt(packageName: String?): String {
+        val rule = packageName?.let { getAppPromptRules()[it] }
+        val mode = rule?.formalityMode ?: globalFormalityMode
+        val customId = rule?.customProfileId ?: activeProfileId
+
+        return when (mode) {
+            FormalityMode.DEFAULT -> customBaseSystemPrompt
+            FormalityMode.FORMAL -> Constants.FORMALITY_FORMAL_PROMPT
+            FormalityMode.FRIENDLY -> Constants.FORMALITY_FRIENDLY_PROMPT
+            FormalityMode.CASUAL -> Constants.FORMALITY_CASUAL_PROMPT
+            FormalityMode.CUSTOM -> {
+                val profiles = getPromptProfiles()
+                val selected = profiles.firstOrNull { it.id == customId } ?: profiles.firstOrNull()
+                selected?.promptText?.takeIf { it.isNotBlank() } ?: customBaseSystemPrompt
+            }
+        }
     }
 
     companion object {
@@ -143,3 +276,24 @@ class SettingsRepository(context: Context) {
         }
     }
 }
+
+enum class FormalityMode(val displayName: String, val description: String) {
+    DEFAULT("Default", "Standard speech cleaner (preserves original tone)"),
+    FORMAL("Formal", "Polished, professional business English"),
+    FRIENDLY("Friendly", "Warm, approachable, and cordial phrasing"),
+    CASUAL("Casual", "Very relaxed, informal everyday messaging"),
+    CUSTOM("Custom Prompt", "Uses selected custom prompt profile")
+}
+
+data class PromptProfile(
+    val id: String,
+    val name: String,
+    val promptText: String
+)
+
+data class AppPromptRule(
+    val packageName: String,
+    val appName: String,
+    val formalityMode: FormalityMode,
+    val customProfileId: String? = null
+)

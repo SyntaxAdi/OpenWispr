@@ -72,12 +72,10 @@ class WisprAccessibilityService : AccessibilityService() {
     }
 
     private fun createNotifChannel() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            val ch = NotificationChannel("wispr_rec", getString(R.string.notif_channel_name), NotificationManager.IMPORTANCE_LOW).apply {
-                description = getString(R.string.notif_channel_desc)
-            }
-            (getSystemService(NotificationManager::class.java)).createNotificationChannel(ch)
+        val ch = NotificationChannel("wispr_rec", getString(R.string.notif_channel_name), NotificationManager.IMPORTANCE_LOW).apply {
+            description = getString(R.string.notif_channel_desc)
         }
+        (getSystemService(NotificationManager::class.java)).createNotificationChannel(ch)
     }
 
     fun startListeningNotification() {

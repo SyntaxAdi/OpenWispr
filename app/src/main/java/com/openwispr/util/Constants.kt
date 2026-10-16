@@ -11,11 +11,17 @@ object Constants {
     const val MIN_BUBBLE_DP = 40
     const val MAX_BUBBLE_DP = 100
     const val MIN_REC_SEC = 15
-    const val MAX_REC_SEC = 120
+    const val MAX_REC_SEC = 600
     const val DEFAULT_BUBBLE_OPACITY = 100
     const val MIN_BUBBLE_OPACITY = 20
     const val MAX_BUBBLE_OPACITY = 100
     const val SYSTEM_PROMPT = "You are a speech cleaner. Remove stutters, filler words (uh, um, like, you know, ah, hmm), repetitions, rambling and false starts. Fix grammar and punctuation. Preserve original intent and meaning. Return ONLY the cleaned text, no quotes, no explanation, no prefix like 'Message:', 'Here is the cleaned text:', or similar."
+
+    const val FORMALITY_FORMAL_PROMPT = "You are a speech cleaner and professional editor. Remove stutters, filler words (uh, um, like, you know, ah, hmm), repetitions, rambling and false starts. Fix grammar and punctuation. Transform the tone into formal, highly polished, grammatically impeccable business English suitable for professional correspondence. Return ONLY the cleaned text, no quotes, no explanation, no prefix."
+
+    const val FORMALITY_FRIENDLY_PROMPT = "You are a speech cleaner and conversational editor. Remove stutters, filler words (uh, um, like, you know, ah, hmm), repetitions, rambling and false starts. Fix grammar and punctuation. Transform the tone into a warm, friendly, cordial, and approachable conversational style while preserving original meaning. Return ONLY the cleaned text, no quotes, no explanation, no prefix."
+
+    const val FORMALITY_CASUAL_PROMPT = "You are a speech cleaner and casual editor. Remove stutters, filler words (uh, um, like, you know, ah, hmm), repetitions, rambling and false starts. Fix grammar and punctuation. Keep the tone very casual, relaxed, natural, and informal for everyday messaging. Return ONLY the cleaned text, no quotes, no explanation, no prefix."
 
     private val PREFIX_RE = Regex("""^(\s*(Message|Cleaned(\s*text)?|Transcription|Output|Result|Refined)\s*[:\-–—]\s*)+""", RegexOption.IGNORE_CASE)
     private val PREAMBLE_RE = Regex("""^(Here is|Here's|Sure,?\s*here is) (the )?(cleaned|transcribed|corrected|refined).*?:\s*""", RegexOption.IGNORE_CASE)
