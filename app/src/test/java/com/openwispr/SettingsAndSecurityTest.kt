@@ -279,6 +279,34 @@ class SettingsAndSecurityTest {
         assertTrue("SettingsRepository encrypt must verify roundtrip before saving",
             sContent.contains("val verified = decrypt(encoded)"))
     }
+
+    @Test
+    fun testUniversalTextInjectorDualActionAndMultiWindow() {
+        val injectorFile = java.io.File("src/main/java/com/openwispr/util/TextInjector.kt")
+        val content = if (injectorFile.exists()) injectorFile.readText() else java.io.File("app/src/main/java/com/openwispr/util/TextInjector.kt").readText()
+
+        // 1. Multi-window scanning prioritizing application windows
+        assertTrue("TextInjector must prioritize TYPE_APPLICATION windows",
+            content.contains("AccessibilityWindowInfo.TYPE_APPLICATION"))
+        assertTrue("TextInjector must define findTargetNode",
+            content.contains("fun findTargetNode(service: AccessibilityService): AccessibilityNodeInfo?"))
+
+        // 2. Broad input node classification (Compose / React Native / EditText)
+        assertTrue("TextInjector must define isInputNode",
+            content.contains("fun isInputNode(node: AccessibilityNodeInfo?): Boolean"))
+        assertTrue("isInputNode must check ACTION_SET_TEXT and ACTION_PASTE",
+            content.contains("supportsAction(node, AccessibilityNodeInfo.ACTION_SET_TEXT) ||\n            supportsAction(node, AccessibilityNodeInfo.ACTION_PASTE)"))
+
+        // 3. Dual-action injection with ACTION_PASTE fallback
+        assertTrue("TextInjector must attempt ACTION_SET_TEXT first",
+            content.contains("node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)"))
+        assertTrue("TextInjector must fall back to direct ACTION_PASTE on node",
+            content.contains("node.performAction(AccessibilityNodeInfo.ACTION_PASTE)"))
+
+        // 4. Password security preserved
+        assertTrue("TextInjector must guard against password fields",
+            content.contains("isPasswordField(target)"))
+    }
 }
 
 

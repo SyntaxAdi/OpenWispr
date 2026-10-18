@@ -7,6 +7,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.Toast
 
 object TextInjector {
@@ -22,46 +23,152 @@ object TextInjector {
             variation == 0x00000010    // TYPE_NUMBER_VARIATION_PASSWORD
     }
 
+    fun isInputNode(node: AccessibilityNodeInfo?): Boolean {
+        if (node == null) return false
+        if (node.isEditable) return true
+        val cls = node.className?.toString().orEmpty()
+        if (cls.contains("EditText", ignoreCase = true)) return true
+        return supportsAction(node, AccessibilityNodeInfo.ACTION_SET_TEXT) ||
+            supportsAction(node, AccessibilityNodeInfo.ACTION_PASTE)
+    }
+
+    private fun supportsAction(node: AccessibilityNodeInfo, actionId: Int): Boolean {
+        return try {
+            node.actionList?.any { it.id == actionId } == true
+        } catch (_: Exception) { false }
+    }
+
+    fun findTargetNode(service: AccessibilityService): AccessibilityNodeInfo? {
+        try {
+            val f = service.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            if (f != null && isInputNode(f)) return f
+        } catch (_: Exception) {}
+
+        val windowRoots = mutableListOf<AccessibilityNodeInfo>()
+        try {
+            val wins = service.windows
+            if (!wins.isNullOrEmpty()) {
+                wins.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+                    .mapNotNull { it.root }
+                    .forEach { windowRoots.add(it) }
+                wins.filter { it.type != AccessibilityWindowInfo.TYPE_APPLICATION }
+                    .mapNotNull { it.root }
+                    .forEach { windowRoots.add(it) }
+            }
+        } catch (_: Exception) {}
+
+        try {
+            service.rootInActiveWindow?.let { if (!windowRoots.contains(it)) windowRoots.add(0, it) }
+        } catch (_: Exception) {}
+
+        for (root in windowRoots) {
+            try {
+                val f = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                if (f != null && isInputNode(f)) return f
+            } catch (_: Exception) {}
+            val found = findFocusedInput(root)
+            if (found != null) return found
+        }
+
+        for (root in windowRoots) {
+            val anyInput = findAnyInput(root)
+            if (anyInput != null) return anyInput
+        }
+
+        return null
+    }
+
+    private fun findFocusedInput(root: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        if (root == null) return null
+        if (root.isFocused && isInputNode(root)) return root
+        for (i in 0 until root.childCount) {
+            val c = root.getChild(i) ?: continue
+            val res = findFocusedInput(c)
+            if (res != null) return res
+        }
+        return null
+    }
+
+    private fun findAnyInput(root: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        if (root == null) return null
+        if (root.isVisibleToUser && isInputNode(root) && !isPasswordField(root)) return root
+        for (i in 0 until root.childCount) {
+            val c = root.getChild(i) ?: continue
+            val res = findAnyInput(c)
+            if (res != null) return res
+        }
+        return null
+    }
+
     fun inject(service: AccessibilityService, text: String): Boolean {
-        val focused = service.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-            ?: service.rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-            ?: findEditableFocused(service.rootInActiveWindow)
+        val target = findTargetNode(service)
 
         // Security check: Refuse injection and suppress clipboard fallback on secure credential fields
-        if (isPasswordField(focused)) {
+        if (isPasswordField(target)) {
             Toast.makeText(service, "Voice dictation disabled on password fields", Toast.LENGTH_SHORT).show()
             return false
         }
 
         var safe = Constants.sanitizeOutput(text)
-        val hintFocused = focused?.let { getHint(it) }
-        if (!hintFocused.isNullOrBlank()) {
-            safe = stripHintPrefix(safe, hintFocused)
+        val hintTarget = target?.let { getHint(it) }
+        if (!hintTarget.isNullOrBlank()) {
+            safe = stripHintPrefix(safe, hintTarget)
             safe = Constants.sanitizeOutput(safe)
         }
-        if (focused != null && tryDirect(focused, safe)) return true
+
+        if (target != null && tryDirect(service, target, safe)) return true
         return copyToClipboard(service, safe)
     }
 
-    private fun tryDirect(node: AccessibilityNodeInfo, text: String): Boolean {
+    private fun tryDirect(service: AccessibilityService, node: AccessibilityNodeInfo, text: String): Boolean {
         return try {
-            if (!node.isEditable) return false
             if (isPasswordField(node)) return false
+
+            if (!node.isFocused) {
+                try { node.performAction(AccessibilityNodeInfo.ACTION_FOCUS) } catch (_: Exception) {}
+            }
+
             val existing = effectiveExisting(node)
             val hint = getHint(node)
             var clean = stripHintPrefix(text, hint)
             clean = Constants.sanitizeOutput(clean)
             if (clean.isEmpty()) return false
+
             val needsSpace = !existing.isNullOrEmpty() &&
                 !existing.endsWith(" ") && !existing.endsWith("\n") &&
                 clean.isNotEmpty() && !clean.startsWith(" ") && !clean.startsWith("\n") &&
                 !clean.startsWith(",") && !clean.startsWith(".") && !clean.startsWith("!") &&
                 !clean.startsWith("?") && !clean.startsWith(":") && !clean.startsWith(";")
             val toSet = if (existing.isNullOrEmpty()) clean else existing + (if (needsSpace) " " else "") + clean
+
+            // Attempt 1: Direct ACTION_SET_TEXT (standard Android EditText)
             val args = Bundle().apply {
                 putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, toSet.trimStart())
             }
-            node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+            val setTextOk = try {
+                node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+            } catch (_: Exception) { false }
+
+            if (setTextOk) return true
+
+            // Attempt 2: Direct ACTION_PASTE on node (Compose BasicTextField, React Native, custom inputs)
+            val cm = service.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            if (cm != null) {
+                val clip = ClipData.newPlainText("OpenWispr", clean).apply {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        description.extras = android.os.PersistableBundle().apply {
+                            putBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE, true)
+                        }
+                    }
+                }
+                cm.setPrimaryClip(clip)
+                val pasteOk = try {
+                    node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+                } catch (_: Exception) { false }
+                if (pasteOk) return true
+            }
+
+            false
         } catch (_: Exception) { false }
     }
 
@@ -80,7 +187,6 @@ object TextInjector {
             val r = raw.trim()
             val h = hint.trim()
             if (r.equals(h, ignoreCase = true)) return null
-            // trim trailing dots and ellipsis - avoid unicode ellipsis char to keep file ascii-safe
             val rNorm = r.trimEnd('.', ' ', '\u2026')
             val hNorm = h.trimEnd('.', ' ', '\u2026')
             if (rNorm.equals(hNorm, ignoreCase = true)) return null
@@ -152,20 +258,8 @@ object TextInjector {
     private fun tryPasteFromClipboard(context: Context) {
         if (context !is AccessibilityService) return
         try {
-            val focused = context.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-                ?: context.rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-            focused?.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+            val target = findTargetNode(context)
+            target?.performAction(AccessibilityNodeInfo.ACTION_PASTE)
         } catch (_: Exception) {}
-    }
-
-    private fun findEditableFocused(root: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
-        if (root == null) return null
-        if (root.isEditable && root.isFocused) return root
-        for (i in 0 until root.childCount) {
-            val c = root.getChild(i) ?: continue
-            val r = findEditableFocused(c)
-            if (r != null) return r
-        }
-        return null
     }
 }
