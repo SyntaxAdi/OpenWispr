@@ -1,111 +1,270 @@
 #!/usr/bin/env bash
-# build.sh — one-command APK builder for OpenWispr
-# Usage: bash build.sh [debug|release]  (default: debug)
-#  - Auto-detects JDK 17 / ANDROID_HOME, handles wireless + USB adb
-#  - Copies APK to project root as OpenWispr-<version>-<buildType>-<date>.apk + latest symlink
+# build.sh — interactive & one-command APK builder for OpenWispr
+# Options:
+#   1) Build release APK
+#   2) Build debug APK
+#   3) Build debug APK + install via ADB + stream logs
+#   4) Exit
 set -euo pipefail
-
-BUILD_TYPE="${1:-debug}"
-if [[ "$BUILD_TYPE" != "debug" && "$BUILD_TYPE" != "release" ]]; then
-  echo "Usage: bash build.sh [debug|release]"
-  exit 1
-fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# --- Resolve JDK 17 (keep system JDK 26 default) ---
-CANDIDATES=(
-  "/usr/lib/jvm/java-17-openjdk"
-  "/usr/lib/jvm/java-21-openjdk"
-  "/opt/jdk-17"
-  "/opt/jdk17"
-)
-JDK_HOME=""
-if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/java" ]]; then
-  ver="$("$JAVA_HOME/bin/java" -version 2>&1 | head -n1)"
-  if echo "$ver" | grep -qE '"(17|21)\.'; then JDK_HOME="$JAVA_HOME"; fi
-fi
-if [[ -z "$JDK_HOME" ]]; then
-  for c in "${CANDIDATES[@]}"; do
-    if [[ -x "$c/bin/java" ]]; then
-      ver="$("$c/bin/java" -version 2>&1 | head -n1)"
-      if echo "$ver" | grep -qE '"(17|21)\.'; then JDK_HOME="$c"; break; fi
-    fi
-  done
-fi
-if [[ -z "$JDK_HOME" ]]; then
-  echo "ERROR: JDK 17/21 not found. Install it: sudo pacman -S jdk17-openjdk"
-  echo "Tried: ${CANDIDATES[*]} and \$JAVA_HOME=${JAVA_HOME:-<unset>}"
-  exit 1
-fi
-export JAVA_HOME="$JDK_HOME"
-echo "→ Using JAVA_HOME=$JAVA_HOME ($("$JAVA_HOME/bin/java" -version 2>&1 | head -n1))"
-
-# --- Resolve Android SDK ---
-if [[ ! -f "local.properties" ]]; then
-  for sdk in "$HOME/Android/Sdk" "$HOME/Android/Sdk" "/opt/android-sdk" "$ANDROID_HOME" "$ANDROID_SDK_ROOT"; do
-    if [[ -n "${sdk:-}" && -d "$sdk/platforms" ]]; then
-      echo "sdk.dir=$sdk" > local.properties
-      echo "→ Created local.properties (sdk.dir=$sdk)"
-      break
-    fi
-  done
-fi
-if [[ ! -f "local.properties" ]]; then
-  echo "ERROR: local.properties missing and SDK not found."
-  echo 'Create it: echo "sdk.dir=/home/akeno/Android/Sdk" > local.properties'
-  exit 1
-fi
-echo "→ $(cat local.properties)"
-
-# --- Fix broken gradlew shim (from 9-line to official 252-line wrapper) ---
-if [[ $(wc -l < gradlew 2>/dev/null || echo 0) -lt 50 ]]; then
-  echo "→ Fixing broken gradlew shim..."
-  if command -v curl >/dev/null 2>&1; then
-    curl -sL https://raw.githubusercontent.com/gradle/gradle/v8.11.0/gradlew -o gradlew
-    chmod +x gradlew
-    echo "→ gradlew replaced with official Gradle 8.11 wrapper"
-  else
-    echo "ERROR: gradlew is broken and curl not found to fix it"
+resolve_jdk() {
+  local candidates=(
+    "/usr/lib/jvm/java-17-openjdk"
+    "/usr/lib/jvm/java-21-openjdk"
+    "/opt/jdk-17"
+    "/opt/jdk17"
+  )
+  local jdk_home=""
+  if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/java" ]]; then
+    local ver
+    ver="$("$JAVA_HOME/bin/java" -version 2>&1 | head -n1)"
+    if echo "$ver" | grep -qE '"(17|21)\.'; then jdk_home="$JAVA_HOME"; fi
+  fi
+  if [[ -z "$jdk_home" ]]; then
+    for c in "${candidates[@]}"; do
+      if [[ -x "$c/bin/java" ]]; then
+        local ver
+        ver="$("$c/bin/java" -version 2>&1 | head -n1)"
+        if echo "$ver" | grep -qE '"(17|21)\.'; then jdk_home="$c"; break; fi
+      fi
+    done
+  fi
+  if [[ -z "$jdk_home" ]]; then
+    echo "ERROR: JDK 17/21 not found. Install it: sudo pacman -S jdk17-openjdk"
+    echo "Tried: ${candidates[*]} and \$JAVA_HOME=${JAVA_HOME:-<unset>}"
     exit 1
   fi
+  export JAVA_HOME="$jdk_home"
+  echo "→ Using JAVA_HOME=$JAVA_HOME ($("$JAVA_HOME/bin/java" -version 2>&1 | head -n1))"
+}
+
+resolve_sdk() {
+  if [[ ! -f "local.properties" ]]; then
+    for sdk in "$HOME/Android/Sdk" "/opt/android-sdk" "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}"; do
+      if [[ -n "${sdk:-}" && -d "$sdk/platforms" ]]; then
+        echo "sdk.dir=$sdk" > local.properties
+        echo "→ Created local.properties (sdk.dir=$sdk)"
+        break
+      fi
+    done
+  fi
+  if [[ ! -f "local.properties" ]]; then
+    echo "ERROR: local.properties missing and SDK not found."
+    echo 'Create it: echo "sdk.dir=/home/akeno/Android/Sdk" > local.properties'
+    exit 1
+  fi
+  echo "→ $(cat local.properties)"
+}
+
+ensure_gradlew() {
+  if [[ $(wc -l < gradlew 2>/dev/null || echo 0) -lt 50 ]]; then
+    echo "→ Fixing broken gradlew shim..."
+    if command -v curl >/dev/null 2>&1; then
+      curl -sL https://raw.githubusercontent.com/gradle/gradle/v8.11.0/gradlew -o gradlew
+      chmod +x gradlew
+      echo "→ gradlew replaced with official Gradle 8.11 wrapper"
+    else
+      echo "ERROR: gradlew is broken and curl not found to fix it"
+      exit 1
+    fi
+  fi
+}
+
+build_apk() {
+  local build_type="$1"
+  resolve_jdk
+  resolve_sdk
+  ensure_gradlew
+
+  echo ""
+  echo "━━━ Building ${build_type^} APK ━━━"
+  ./gradlew "assemble${build_type^}" --console=plain
+
+  local src_apk=""
+  if [[ "$build_type" == "debug" ]]; then
+    src_apk="app/build/outputs/apk/debug/app-debug.apk"
+  else
+    src_apk=$(ls -t app/build/outputs/apk/release/*.apk 2>/dev/null | head -n1 || true)
+  fi
+
+  if [[ -z "${src_apk:-}" || ! -f "$src_apk" ]]; then
+    echo "ERROR: APK not found after build (expected $src_apk)"
+    ls -R app/build/outputs/apk 2>&1 | head -n 30 || true
+    exit 1
+  fi
+
+  local version
+  version="$(grep -E 'versionName\s*=' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')"
+  version="${version:-1.0.0}"
+  local date_str
+  date_str="$(date +%Y%m%d)"
+  local dest="OpenWispr-${version}-${build_type}-${date_str}.apk"
+
+  echo "→ Removing previous APKs (rm -rf *.apk)..."
+  rm -rf ./*.apk
+
+  cp -f "$src_apk" "./$dest"
+  local latest="OpenWispr-latest-${build_type}.apk"
+  ln -sf "$dest" "./$latest"
+  local size
+  size="$(du -h "./$dest" | cut -f1)"
+
+  echo ""
+  echo "✓ APK built: $src_apk ($size)"
+  echo "✓ Copied to: $SCRIPT_DIR/$dest"
+  echo "✓ Latest symlink: $SCRIPT_DIR/$latest -> $dest"
+  echo ""
+  ls -lh "./$dest" "./$latest"
+  echo ""
+
+  # Export result path for downstream callers
+  BUILT_APK_PATH="./$dest"
+}
+
+install_and_stream_logs() {
+  local apk_path="$1"
+  if ! command -v adb >/dev/null 2>&1; then
+    echo "ERROR: adb command not found on PATH."
+    exit 1
+  fi
+
+  echo "━━━ Connecting to Android Device ━━━"
+  while true; do
+    local devices
+    mapfile -t devices < <(adb devices | awk 'NR>1 && $2=="device" {print $1}')
+    if [[ ${#devices[@]} -gt 0 ]]; then
+      TARGET_DEVICE="${devices[0]}"
+      echo "✓ Device detected: $TARGET_DEVICE"
+      if [[ ${#devices[@]} -gt 1 ]]; then
+        echo "  (Multiple devices detected: ${devices[*]}. Using first: $TARGET_DEVICE)"
+      fi
+      break
+    fi
+    echo "⚠ No active ADB devices detected."
+    echo "  Please plug in your device via USB or connect via wireless ADB (adb connect <ip>:<port>)."
+    read -r -p "Press [Enter] to scan again, or Ctrl+C to abort... " _
+  done
+
+  echo ""
+  echo "━━━ Installing APK via ADB ━━━"
+  adb -s "$TARGET_DEVICE" install -r "$apk_path"
+
+  echo ""
+  echo "━━━ Launching OpenWispr ━━━"
+  adb -s "$TARGET_DEVICE" shell am start -n com.openwispr/.MainActivity
+
+  echo ""
+  echo "━━━ Streaming Logcat ━━━"
+  trap 'echo -e "\n→ Logcat streaming stopped."; exit 0' INT TERM
+
+  adb -s "$TARGET_DEVICE" logcat -c || true
+
+  local pid=""
+  for _ in {1..8}; do
+    pid="$(adb -s "$TARGET_DEVICE" shell pidof -s com.openwispr 2>/dev/null || true)"
+    if [[ -n "$pid" ]]; then break; fi
+    sleep 0.25
+  done
+
+  echo "Streaming logs for com.openwispr (PID: ${pid:-detecting}). Press Ctrl+C to exit."
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  if [[ -n "$pid" ]]; then
+    adb -s "$TARGET_DEVICE" logcat -v color --pid="$pid"
+  else
+    adb -s "$TARGET_DEVICE" logcat -v color -e "com.openwispr|OpenWispr|AndroidRuntime|FATAL"
+  fi
+}
+
+show_menu() {
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "          OpenWispr Build Console               "
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  1) Build release APK"
+  echo "  2) Build debug APK"
+  echo "  3) Build debug APK + install via ADB + stream logs"
+  echo "  4) Exit"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
+# --- Dispatch ---
+ACTION=""
+if [[ $# -gt 0 ]]; then
+  case "$1" in
+    1|release|--release)
+      ACTION="1"
+      ;;
+    2|debug|--debug)
+      ACTION="2"
+      ;;
+    3|install|--install|stream|--stream)
+      ACTION="3"
+      ;;
+    4|exit|--exit)
+      ACTION="4"
+      ;;
+    -h|--help)
+      echo "Usage: ./build.sh [1|2|3|4|release|debug|install|exit]"
+      echo "  1, release: Build release APK"
+      echo "  2, debug:   Build debug APK"
+      echo "  3, install: Build debug APK, install via ADB, stream logs"
+      echo "  4, exit:    Exit"
+      exit 0
+      ;;
+    *)
+      echo "ERROR: Unknown option '$1'"
+      echo "Usage: ./build.sh [1|2|3|4|release|debug|install|exit]"
+      exit 1
+      ;;
+  esac
 fi
 
-# --- Build ---
-echo ""
-echo "━━━ Building $BUILD_TYPE APK ━━━"
-./gradlew "assemble${BUILD_TYPE^}" --console=plain
-
-# --- Locate + copy APK to project root ---
-SRC_APK=""
-if [[ "$BUILD_TYPE" == "debug" ]]; then
-  SRC_APK="app/build/outputs/apk/debug/app-debug.apk"
-else
-  # release may be unsigned or signed depending on signingConfig
-  SRC_APK=$(ls -t app/build/outputs/apk/release/*.apk 2>/dev/null | head -n1 || true)
+if [[ -z "$ACTION" ]]; then
+  while true; do
+    show_menu
+    read -r -p "Select option [1-4]: " choice
+    case "$choice" in
+      1)
+        ACTION="1"
+        break
+        ;;
+      2)
+        ACTION="2"
+        break
+        ;;
+      3)
+        ACTION="3"
+        break
+        ;;
+      4)
+        ACTION="4"
+        break
+        ;;
+      *)
+        echo ""
+        echo "⚠ Invalid option '$choice'. Please select 1, 2, 3, or 4."
+        echo ""
+        ;;
+    esac
+  done
 fi
-if [[ -z "${SRC_APK:-}" || ! -f "$SRC_APK" ]]; then
-  echo "ERROR: APK not found after build (expected $SRC_APK)"
-  ls -R app/build/outputs/apk 2>&1 | head -n 30 || true
-  exit 1
-fi
 
-VERSION="$(grep -E 'versionName\s*=' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')"
-VERSION="${VERSION:-1.0.0}"
-DATE="$(date +%Y%m%d)"
-DEST="OpenWispr-${VERSION}-${BUILD_TYPE}-${DATE}.apk"
-cp -f "$SRC_APK" "./$DEST"
-LATEST="OpenWispr-latest-${BUILD_TYPE}.apk"
-ln -sf "$DEST" "./$LATEST"
-SIZE="$(du -h "./$DEST" | cut -f1)"
-echo ""
-echo "✓ APK built: $SRC_APK ($SIZE)"
-echo "✓ Copied to: $SCRIPT_DIR/$DEST"
-echo "✓ Latest symlink: $SCRIPT_DIR/$LATEST -> $DEST"
-echo ""
-ls -lh "./$DEST" "./$LATEST"
-echo ""
-echo "Install with:"
-echo "  adb install -r ./$DEST"
-echo "  # or: adb -s <device> install -r ./$DEST  (for wireless: adb devices to list)"
+case "$ACTION" in
+  1)
+    build_apk "release"
+    ;;
+  2)
+    build_apk "debug"
+    ;;
+  3)
+    build_apk "debug"
+    install_and_stream_logs "$BUILT_APK_PATH"
+    ;;
+  4)
+    echo "Exiting."
+    exit 0
+    ;;
+esac

@@ -48,6 +48,8 @@ class BubbleManager(
     private var tickLoader: ProgressBar? = null
     private var tickWrap: FrameLayout? = null
     private var closeIcon: ImageView? = null
+    private var actionGroup: View? = null
+    private var actionDismissRunnable: Runnable? = null
     private var snapAnimator: ValueAnimator? = null
     private var state: State = State.Idle
     private var amplitudeRunnable: Runnable? = null
@@ -122,6 +124,8 @@ class BubbleManager(
     }
 
     fun destroy() {
+        actionDismissRunnable?.let { handler.removeCallbacks(it) }
+        actionDismissRunnable = null
         handler.removeCallbacksAndMessages(null)
         scope.cancel()
         snapAnimator?.cancel()
@@ -215,8 +219,44 @@ class BubbleManager(
         expanded.addView(close)
         expanded.addView(wave)
         expanded.addView(tickHolder)
+
+        val action = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            setPadding(dp(12), dp(4), dp(12), dp(4))
+        }
+        val actionDot = View(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(7), dp(7)).apply {
+                setMargins(0, 0, dp(6), 0)
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xFFFF2E2E.toInt())
+            }
+        }
+        val actionText = TextView(ctx).apply {
+            text = "KEY NOT SET • TAP TO FIX"
+            textSize = 10.5f
+            setTextColor(0xFFFFFFFF.toInt())
+            typeface = android.graphics.Typeface.MONOSPACE
+            gravity = Gravity.CENTER
+        }
+        action.addView(actionDot)
+        action.addView(actionText)
+        action.setOnClickListener {
+            try {
+                val intent = android.content.Intent(service, com.openwispr.MainActivity::class.java).apply {
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                }
+                service.startActivity(intent)
+            } catch (_: Exception) {}
+            showCollapsedInternal()
+        }
+
         container.addView(mic)
         container.addView(expanded)
+        container.addView(action)
         val outer = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -225,6 +265,7 @@ class BubbleManager(
         }
         collapsedGroup = mic
         expandedGroup = expanded
+        actionGroup = action
         waveform = wave
         tickIcon = tick
         tickLoader = tickSpin
@@ -367,8 +408,10 @@ class BubbleManager(
     }
 
     private fun showCollapsedInternal() {
+        actionDismissRunnable?.let { handler.removeCallbacks(it) }
         collapsedGroup?.visibility = View.VISIBLE
         expandedGroup?.visibility = View.GONE
+        actionGroup?.visibility = View.GONE
         statusText?.visibility = View.GONE
         bubbleView?.background = null
         tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f; isEnabled = true; isClickable = true }
@@ -391,6 +434,7 @@ class BubbleManager(
     }
 
     private fun expand() {
+        actionDismissRunnable?.let { handler.removeCallbacks(it) }
         val p = params ?: return
         val bubbleDp = settings.bubbleDp.coerceIn(Constants.MIN_BUBBLE_DP, Constants.MAX_BUBBLE_DP)
         applyDynamicSizes(bubbleDp)
@@ -424,13 +468,67 @@ class BubbleManager(
         anim.start()
         collapsedGroup?.visibility = View.GONE
         expandedGroup?.visibility = View.VISIBLE
+        actionGroup?.visibility = View.GONE
         val bg = (service.getDrawable(R.drawable.bg_expanded)?.mutate() as? GradientDrawable)
         bg?.cornerRadius = targetH / 2f
         (bubbleView as? ViewGroup)?.getChildAt(0)?.background = bg
     }
 
+    private fun showKeyMissingActionBubble() {
+        val p = params ?: return
+        actionDismissRunnable?.let { handler.removeCallbacks(it) }
+        try {
+            bubbleView?.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+        } catch (_: Exception) {}
+        Toast.makeText(service, "OpenWispr: Groq API key required. Tap bubble to set.", Toast.LENGTH_SHORT).show()
+
+        val bubbleDp = settings.bubbleDp.coerceIn(Constants.MIN_BUBBLE_DP, Constants.MAX_BUBBLE_DP)
+        val targetH = dp(bubbleDp)
+        val targetW = dp(190).coerceAtMost((service.resources.displayMetrics.widthPixels * 0.85f).toInt())
+
+        val startW = p.width
+        val startH = p.height
+        val startX = p.x
+        val dm = service.resources.displayMetrics
+        val targetX = if (startX + targetW > dm.widthPixels - dp(8)) {
+            (dm.widthPixels - targetW - dp(8)).coerceAtLeast(0)
+        } else startX
+
+        val anim = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 180
+            interpolator = DecelerateInterpolator()
+            addUpdateListener {
+                val f = it.animatedValue as Float
+                p.width = (startW + (targetW - startW) * f).toInt()
+                p.height = (startH + (targetH - startH) * f).toInt()
+                p.x = (startX + (targetX - startX) * f).toInt()
+                try { wm.updateViewLayout(bubbleView, p) } catch (_: Exception) {}
+            }
+        }
+        anim.start()
+
+        collapsedGroup?.visibility = View.GONE
+        expandedGroup?.visibility = View.GONE
+        actionGroup?.visibility = View.VISIBLE
+        val bg = (service.getDrawable(R.drawable.bg_expanded)?.mutate() as? GradientDrawable)
+        bg?.cornerRadius = targetH / 2f
+        bg?.setStroke(dp(1), 0x99FF2E2E.toInt())
+        (bubbleView as? ViewGroup)?.getChildAt(0)?.background = bg
+
+        actionDismissRunnable = Runnable {
+            if (state == State.Idle) {
+                showCollapsedInternal()
+            }
+        }
+        handler.postDelayed(actionDismissRunnable!!, 2200L)
+    }
+
     private fun startRecording() {
         if (state != State.Idle) return
+        if (settings.apiKey.isBlank()) {
+            showKeyMissingActionBubble()
+            return
+        }
         val file = recorder.start()
         if (file == null) { Toast.makeText(service, "Mic permission needed / failed to start", Toast.LENGTH_SHORT).show(); return }
         recordingStartTimeMs = System.currentTimeMillis()
@@ -489,6 +587,8 @@ class BubbleManager(
         waveform?.setIdle()
         statusText?.apply { text = "Transcribing..."; visibility = View.VISIBLE }
         if (file == null || !file.exists() || file.length() < 800) {
+            android.util.Log.w("OpenWispr:Bubble", "Audio recording empty or too small (${file?.length() ?: 0} bytes)")
+            Toast.makeText(service, "OpenWispr: No speech recorded", Toast.LENGTH_SHORT).show()
             statusText?.text = "No audio"
             tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
             tickLoader?.visibility = View.GONE
@@ -512,6 +612,8 @@ class BubbleManager(
             val llama = settings.llama
             if (apiKey.isBlank()) {
                 withContext(Dispatchers.Main) {
+                    android.util.Log.w("OpenWispr:Bubble", "Groq API key missing in Settings")
+                    Toast.makeText(service, "OpenWispr: API key required in Settings", Toast.LENGTH_SHORT).show()
                     statusText?.text = "Set API key in Settings"
                     tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
                     tickLoader?.visibility = View.GONE
@@ -527,6 +629,8 @@ class BubbleManager(
             }
             when (val tr = groq.transcribe(baseUrl, apiKey, whisper, file)) {
                 is GroqResult.Error -> withContext(Dispatchers.Main) {
+                    android.util.Log.e("OpenWispr:Bubble", "Transcription failed: ${tr.message}")
+                    Toast.makeText(service, "Transcription failed: ${tr.message.take(35)}", Toast.LENGTH_SHORT).show()
                     statusText?.text = tr.message.take(60)
                     tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
                     tickLoader?.visibility = View.GONE

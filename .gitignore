@@ -8,3 +8,4 @@ local.properties
 # build.sh output — keep APKs local, don't commit 16MB binaries
 OpenWispr-*.apk
 design/
+brag-output/

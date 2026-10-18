@@ -27,6 +27,16 @@
 </p>
 <br>
 
+<p align="center">
+  <video src="brag.mp4" poster="brag.jpg" width="100%" controls autoplay loop muted>
+    <a href="brag.mp4">
+      <img src="brag.jpg" width="100%" alt="OpenWispr Demo Launch Video" />
+    </a>
+  </video>
+</p>
+
+<br>
+
 ## Table of Contents
 
 1. [Overview](#overview)
@@ -35,12 +45,12 @@
    3.1. [Project Index](#project-index)
 4. [Getting Started](#getting-started)
    4.1. [Prerequisites](#prerequisites)
-   4.2. [Installation & Build](#installation--build)
-   4.3. [Configuration & Permissions](#configuration--permissions)
+   4.2. [Installation &amp; Build](#installation--build)
+   4.3. [Configuration &amp; Permissions](#configuration--permissions)
    4.4. [Usage](#usage)
    4.5. [Tests](#tests)
 5. [Architecture](#architecture)
-6. [Privacy & Security](#privacy--security)
+6. [Privacy &amp; Security](#privacy--security)
 7. [Roadmap](#roadmap)
 8. [Contributing](#contributing)
 9. [License](#license)
@@ -50,9 +60,10 @@
 
 ## Overview
 
-**OpenWispr** is an ultra-lean, context-aware Android voice dictation utility engineered to mirror the fluid desktop typing experience of Wispr Flow. When an editable text input gains focus anywhere in the operating system (WhatsApp, Chrome, Gmail, Notes), OpenWispr surfaces an unobtrusive floating bubble. Tapping expands a tactile, Nothing OS-inspired capsule featuring real-time acoustic waveforms. 
+**OpenWispr** is an ultra-lean, context-aware Android voice dictation utility engineered to mirror the fluid desktop typing experience of Wispr Flow. When an editable text input gains focus anywhere in the operating system (WhatsApp, Chrome, Gmail, Notes), OpenWispr surfaces an unobtrusive floating bubble. Tapping expands a tactile, Nothing OS-inspired capsule featuring real-time acoustic waveforms.
 
 Spoken speech is captured into local temporary audio and dispatched to Groq Cloud's ultra-low latency infrastructure:
+
 1. **Transcription**: `whisper-large-v3-turbo` converts speech to raw text in sub-second time.
 2. **Refinement**: `llama-3.1-8b-instant` systematically removes filler words, stuttering, false starts, and rambling while preserving original meaning.
 3. **Direct Injection**: The refined text is injected directly into the active field via Android Accessibility APIs without touching the system clipboard.
@@ -63,16 +74,16 @@ Built with pure idiomatic Kotlin, Jetpack Compose, and native Android `HttpURLCo
 
 ## Features
 
-|     | Feature | Summary |
-| :-- | :---: | :------ |
-| ⚙️ | **Architecture** | Single-Activity Jetpack Compose shell coupled with an independent `AccessibilityService` and window overlay manager. |
-| 🔩 | **Code Quality** | Zero external networking bloatware; ~1,100 LOC Kotlin core; R8 resource and code shrinking. |
-| 🎙️ | **Voice Engine** | Dual-stage Groq Cloud AI pipeline: Whisper Large v3 Turbo transcription + LLaMA 3.1 8B instant gibberish filtering. |
-| 🌊 | **Waveform UI** | Dual-layer 28-bar audio visualizer (white voice overlay over grey baseline) with Nothing Red recording beacon. |
-| 🫧 | **Dynamic Bubble** | System overlay floating bubble that automatically scales its expanded capsule and controls to user-configured DP. |
-| 🔤 | **Direct Injection** | Direct `AccessibilityNodeInfo` `ACTION_SET_TEXT` injection with graceful fallback to clipboard paste and notifications. |
-| 📊 | **On-Device Telemetry** | Local SQLite database tracking total words spoken, typing speed (WPM), usage streaks, and per-app distribution. |
-| 🛡️ | **Privacy First** | Audio recorded strictly to local cache, uploaded directly over TLS to Groq, and purged immediately after dispatch. |
+|      |            Feature            | Summary                                                                                                                     |
+| :--- | :---------------------------: | :-------------------------------------------------------------------------------------------------------------------------- |
+| ⚙️ |    **Architecture**    | Single-Activity Jetpack Compose shell coupled with an independent `AccessibilityService` and window overlay manager.      |
+| 🔩   |    **Code Quality**    | Zero external networking bloatware; ~1,100 LOC Kotlin core; R8 resource and code shrinking.                                 |
+| 🎙️ |    **Voice Engine**    | Dual-stage Groq Cloud AI pipeline: Whisper Large v3 Turbo transcription + LLaMA 3.1 8B instant gibberish filtering.         |
+| 🌊   |     **Waveform UI**     | Dual-layer 28-bar audio visualizer (white voice overlay over grey baseline) with Nothing Red recording beacon.              |
+| 🫧   |   **Dynamic Bubble**   | System overlay floating bubble that automatically scales its expanded capsule and controls to user-configured DP.           |
+| 🔤   |  **Direct Injection**  | Direct `AccessibilityNodeInfo` `ACTION_SET_TEXT` injection with graceful fallback to clipboard paste and notifications. |
+| 📊   | **On-Device Telemetry** | Local SQLite database tracking total words spoken, typing speed (WPM), usage streaks, and per-app distribution.             |
+| 🛡️ |    **Privacy First**    | Audio recorded strictly to local cache, uploaded directly over TLS to Groq, and purged immediately after dispatch.          |
 
 ---
 
@@ -278,6 +289,7 @@ Built with pure idiomatic Kotlin, Jetpack Compose, and native Android `HttpURLCo
 ### Prerequisites
 
 Ensure your development environment meets the following specifications:
+
 - **Operating System:** Linux, macOS, or Windows
 - **Java Development Kit (JDK):** JDK 17 (OpenJDK or Oracle)
 - **Android SDK:** Platform 34 (Android 14) with Build-Tools 34.0.0
@@ -291,22 +303,26 @@ Ensure your development environment meets the following specifications:
 Build the debug or production APK directly from source:
 
 1. Clone the repository:
+
 ```sh
 git clone https://github.com/SyntaxAdi/OpenWispr.git
 cd OpenWispr
 ```
 
 2. Configure local Android SDK path in `local.properties`:
+
 ```properties
 sdk.dir=/path/to/your/android/sdk
 ```
 
 3. Assemble the debug APK:
+
 ```sh
 JAVA_HOME=/usr/lib/jvm/java-17-openjdk ./gradlew assembleDebug
 ```
 
 4. Install directly onto a connected device or emulator via ADB:
+
 ```sh
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
@@ -316,6 +332,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 ### Configuration & Permissions
 
 Upon launching OpenWispr for the first time:
+
 1. **Grant Microphone Permission**: Required for capturing audio input.
 2. **Enable Accessibility Service**: Navigate to `Settings > Accessibility > Installed Apps > OpenWispr` and enable the service. This allows OpenWispr to detect when an editable input field is active and directly inject transcribed text.
 3. **Grant Display Over Other Apps**: (If prompted on Android 10+) Required for overlaying the floating action bubble.
@@ -393,11 +410,11 @@ JAVA_HOME=/usr/lib/jvm/java-17-openjdk ./gradlew testDebugUnitTest
 
 ## Roadmap
 
-- [x] Context-aware floating bubble overlay with accessibility focus locks.
-- [x] Dual-layer Nothing OS waveform visualizer with red recording indicator.
-- [x] Dynamic capsule and button scaling matching user bubble size settings.
-- [x] Nothing OS dot-matrix LED typographic headers and custom canvas glyphs.
-- [x] Complete brand identity integration with adaptive vector layers and monochrome Nothing icon pack support.
+- [X] Context-aware floating bubble overlay with accessibility focus locks.
+- [X] Dual-layer Nothing OS waveform visualizer with red recording indicator.
+- [X] Dynamic capsule and button scaling matching user bubble size settings.
+- [X] Nothing OS dot-matrix LED typographic headers and custom canvas glyphs.
+- [X] Complete brand identity integration with adaptive vector layers and monochrome Nothing icon pack support.
 - [ ] Offline transcription fallback using on-device Whisper models via GGML / Whisper.cpp.
 - [ ] Multilingual auto-detection and custom vocabulary prompt injection.
 

@@ -25,6 +25,9 @@ class SettingsRepository(context: Context) {
             if (enc != null) {
                 val decrypted = decrypt(enc)
                 if (decrypted != null) return decrypted
+                // Purge corrupt or un-decryptable ciphertext from invalidated keystore
+                logW("OpenWispr:Settings", "Purging corrupt or invalidated encrypted key")
+                sp.edit().remove("api_key_enc").apply()
             }
             // Auto-migrate legacy plaintext key if present
             val legacy = sp.getString("api_key", null)
@@ -47,8 +50,8 @@ class SettingsRepository(context: Context) {
             if (encrypted != null) {
                 sp.edit().putString("api_key_enc", encrypted).remove("api_key").apply()
             } else {
-                // Fallback for non-AndroidKeyStore environments
-                sp.edit().putString("api_key", trimmed).apply()
+                // Fallback for non-AndroidKeyStore environments: save plaintext, purge enc
+                sp.edit().putString("api_key", trimmed).remove("api_key_enc").apply()
             }
         }
 
@@ -290,21 +293,28 @@ class SettingsRepository(context: Context) {
 
         private fun getOrCreateSecretKey(): SecretKey {
             val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-            if (!keyStore.containsAlias(KEY_ALIAS)) {
-                val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
-                val spec = KeyGenParameterSpec.Builder(
-                    KEY_ALIAS,
-                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-                )
-                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                    .setKeySize(256)
-                    .build()
-                keyGenerator.init(spec)
-                return keyGenerator.generateKey()
+            val existing = try {
+                keyStore.getKey(KEY_ALIAS, null) as? SecretKey
+            } catch (_: Exception) {
+                null
             }
-            val entry = keyStore.getEntry(KEY_ALIAS, null) as KeyStore.SecretKeyEntry
-            return entry.secretKey
+            if (existing != null) return existing
+
+            val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+            val spec = KeyGenParameterSpec.Builder(
+                KEY_ALIAS,
+                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+            )
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build()
+            keyGenerator.init(spec)
+            return keyGenerator.generateKey()
+        }
+
+        private fun logW(tag: String, msg: String) {
+            try { android.util.Log.w(tag, msg) } catch (_: Throwable) {}
         }
 
         fun encrypt(plainText: String): String? {
@@ -315,8 +325,11 @@ class SettingsRepository(context: Context) {
                 cipher.init(Cipher.ENCRYPT_MODE, key)
                 val iv = cipher.iv
                 val cipherText = cipher.doFinal(plainText.toByteArray(Charsets.UTF_8))
-                Base64.getEncoder().encodeToString(iv + cipherText)
-            } catch (_: Throwable) {
+                val encoded = Base64.getEncoder().encodeToString(iv + cipherText)
+                val verified = decrypt(encoded)
+                if (verified == plainText) encoded else null
+            } catch (t: Throwable) {
+                logW("OpenWispr:Settings", "KeyStore encrypt failed: ${t.message}")
                 null
             }
         }
@@ -333,7 +346,8 @@ class SettingsRepository(context: Context) {
                 val spec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
                 cipher.init(Cipher.DECRYPT_MODE, key, spec)
                 String(cipher.doFinal(cipherText), Charsets.UTF_8)
-            } catch (_: Throwable) {
+            } catch (t: Throwable) {
+                logW("OpenWispr:Settings", "KeyStore decrypt failed: ${t.message}")
                 null
             }
         }

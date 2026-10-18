@@ -254,5 +254,31 @@ class SettingsAndSecurityTest {
         assertTrue("PersonaScreen PromptInspectionNote must contain SELECT ACTIVE PROFILE quick selector", pContent.contains("SELECT ACTIVE PROFILE:"))
         assertTrue("PersonaScreen PromptInspectionNote must provide + NEW PROFILE button", pContent.contains("+ NEW PROFILE"))
     }
+
+    @Test
+    fun testBubbleManagerValidatesApiKeyBeforeRecording() {
+        val bubbleFile = java.io.File("src/main/java/com/openwispr/service/BubbleManager.kt")
+        val bContent = if (bubbleFile.exists()) bubbleFile.readText() else java.io.File("app/src/main/java/com/openwispr/service/BubbleManager.kt").readText()
+
+        assertTrue("startRecording must check settings.apiKey.isBlank() before starting audio recorder",
+            bContent.contains("if (settings.apiKey.isBlank()) {\n            showKeyMissingActionBubble()\n            return\n        }"))
+        assertTrue("showKeyMissingActionBubble must be defined", bContent.contains("private fun showKeyMissingActionBubble()"))
+        assertTrue("showKeyMissingActionBubble must display KEY NOT SET warning", bContent.contains("KEY NOT SET • TAP TO FIX"))
+        assertTrue("BubbleManager must define actionGroup view", bContent.contains("actionGroup = action"))
+    }
+
+    @Test
+    fun testSettingsRepositoryKeyStorePersistenceRobustness() {
+        val settingsFile = java.io.File("src/main/java/com/openwispr/data/SettingsRepository.kt")
+        val sContent = if (settingsFile.exists()) settingsFile.readText() else java.io.File("app/src/main/java/com/openwispr/data/SettingsRepository.kt").readText()
+
+        assertTrue("SettingsRepository must use keyStore.getKey for safe key lookup",
+            sContent.contains("keyStore.getKey(KEY_ALIAS, null) as? SecretKey"))
+        assertTrue("SettingsRepository must purge invalid encrypted key on decryption failure",
+            sContent.contains("sp.edit().remove(\"api_key_enc\").apply()"))
+        assertTrue("SettingsRepository encrypt must verify roundtrip before saving",
+            sContent.contains("val verified = decrypt(encoded)"))
+    }
 }
+
 
