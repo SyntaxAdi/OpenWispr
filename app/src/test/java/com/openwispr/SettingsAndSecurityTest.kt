@@ -3,6 +3,7 @@ package com.openwispr
 import com.openwispr.audio.AudioRecorder
 import com.openwispr.data.HistoryDatabaseHelper
 import com.openwispr.data.SettingsRepository
+import com.openwispr.util.Constants
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -306,6 +307,50 @@ class SettingsAndSecurityTest {
         // 4. Password security preserved
         assertTrue("TextInjector must guard against password fields",
             content.contains("isPasswordField(target)"))
+    }
+
+    @Test
+    fun testFormatShortModelName() {
+        assertEquals("GPT-OSS 20B", Constants.formatShortModelName("openai/gpt-oss-20b"))
+        assertEquals("GPT-OSS 120B", Constants.formatShortModelName("openai/gpt-oss-120b"))
+        assertEquals("QWEN 27B", Constants.formatShortModelName("qwen/qwen3.8-27b"))
+        assertEquals("ALLAM 7B", Constants.formatShortModelName("allam-2-7b"))
+        assertEquals("LLAMA 8B", Constants.formatShortModelName("llama-3.1-8b-instant"))
+        assertEquals("LLAMA 70B", Constants.formatShortModelName("llama-3.3-70b-versatile"))
+        assertEquals("WHISPER TURBO", Constants.formatShortModelName("whisper-large-v3-turbo"))
+        assertEquals("WHISPER V3", Constants.formatShortModelName("whisper-large-v3"))
+        assertEquals("CUSTOM-MODEL-L", Constants.formatShortModelName("vendor/custom-model-long-name"))
+    }
+
+    @Test
+    fun testDynamicModelParsingAndDefaultLlama() {
+        // 1. Verify Constants default model
+        assertEquals("openai/gpt-oss-20b", Constants.DEFAULT_LLAMA)
+        assertTrue(Constants.LLAMA_MODELS.contains("openai/gpt-oss-20b"))
+
+        // 2. Verify dynamic model parsing with real Groq models payload
+        val sampleJson = """
+            {
+              "object": "list",
+              "data": [
+                {"id": "openai/gpt-oss-120b", "active": true, "input_modalities": ["text"], "output_modalities": ["text"]},
+                {"id": "allam-2-7b", "active": true, "input_modalities": ["text"], "output_modalities": ["text"]},
+                {"id": "whisper-large-v3-turbo", "active": true, "input_modalities": ["audio"], "output_modalities": ["transcription"]},
+                {"id": "openai/gpt-oss-20b", "active": true, "input_modalities": ["text"], "output_modalities": ["text"]},
+                {"id": "canopylabs/orpheus-v1-english", "active": true, "input_modalities": ["text"], "output_modalities": ["speech"]},
+                {"id": "meta-llama/llama-prompt-guard-2-86m", "active": true, "input_modalities": ["text"], "output_modalities": ["text"]},
+                {"id": "openai/gpt-oss-safeguard-20b", "active": true, "input_modalities": ["text"], "output_modalities": ["text"]},
+                {"id": "qwen/qwen3.8-27b", "active": true, "input_modalities": ["text", "image"], "output_modalities": ["text"]}
+              ]
+            }
+        """.trimIndent()
+
+        val parsed = com.openwispr.data.GroqRepository.parseTextModels(sampleJson)
+        assertEquals(listOf("openai/gpt-oss-120b", "allam-2-7b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"), parsed)
+        assertTrue(!parsed.contains("whisper-large-v3-turbo"))
+        assertTrue(!parsed.contains("canopylabs/orpheus-v1-english"))
+        assertTrue(!parsed.contains("meta-llama/llama-prompt-guard-2-86m"))
+        assertTrue(!parsed.contains("openai/gpt-oss-safeguard-20b"))
     }
 }
 

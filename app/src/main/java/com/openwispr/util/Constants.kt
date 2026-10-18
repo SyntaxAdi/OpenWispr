@@ -3,9 +3,9 @@ package com.openwispr.util
 object Constants {
     const val DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
     const val DEFAULT_WHISPER = "whisper-large-v3-turbo"
-    const val DEFAULT_LLAMA = "llama-3.1-8b-instant"
+    const val DEFAULT_LLAMA = "openai/gpt-oss-20b"
     val WHISPER_MODELS = listOf("whisper-large-v3-turbo", "whisper-large-v3")
-    val LLAMA_MODELS = listOf("llama-3.1-8b-instant", "llama-3.3-70b-versatile", "llama-3.1-70b-versatile")
+    val LLAMA_MODELS = listOf("openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3.8-27b", "allam-2-7b")
     const val DEFAULT_BUBBLE_DP = 56
     const val DEFAULT_MAX_SEC = 60
     const val MIN_BUBBLE_DP = 40
@@ -39,5 +39,22 @@ object Constants {
             if (t.startsWith("text") || t.startsWith("plain")) t = t.substringAfter("\n").trim()
         }
         return t.removeSurrounding("\"").removeSurrounding("'").removeSurrounding("“").removeSurrounding("”").trim()
+    }
+
+    /** Format long model identifiers into clean, human-readable monospace badges (e.g. "openai/gpt-oss-20b" -> "GPT-OSS 20B"). */
+    fun formatShortModelName(model: String): String {
+        val clean = model.substringAfter('/')
+        return when {
+            clean.contains("gpt-oss-20b", ignoreCase = true) -> "GPT-OSS 20B"
+            clean.contains("gpt-oss-120b", ignoreCase = true) -> "GPT-OSS 120B"
+            clean.contains("qwen", ignoreCase = true) && clean.contains("27b", ignoreCase = true) -> "QWEN 27B"
+            clean.contains("allam", ignoreCase = true) -> "ALLAM 7B"
+            clean.contains("70b", ignoreCase = true) -> "LLAMA 70B"
+            clean.contains("8b", ignoreCase = true) -> "LLAMA 8B"
+            clean.contains("turbo", ignoreCase = true) -> "WHISPER TURBO"
+            clean.contains("whisper", ignoreCase = true) -> "WHISPER V3"
+            clean.isNotBlank() -> clean.uppercase().take(14)
+            else -> "DEFAULT"
+        }
     }
 }

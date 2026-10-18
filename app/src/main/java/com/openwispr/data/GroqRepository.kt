@@ -26,9 +26,32 @@ class GroqRepository {
             }
             return trimmed
         }
+
+        fun parseTextModels(body: String): List<String> {
+            val arr = try { JSONObject(body).optJSONArray("data") } catch (_: Exception) { null } ?: return emptyList()
+            val list = mutableListOf<String>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val id = obj.optString("id")
+                val active = obj.optBoolean("active", true)
+                val outMods = obj.optJSONArray("output_modalities")?.let { jArr ->
+                    (0 until jArr.length()).map { jArr.getString(it) }
+                } ?: listOf("text")
+                val inMods = obj.optJSONArray("input_modalities")?.let { jArr ->
+                    (0 until jArr.length()).map { jArr.getString(it) }
+                } ?: listOf("text")
+
+                if (active && "text" in outMods && "text" in inMods &&
+                    !id.contains("guard") && !id.contains("whisper") && !id.contains("orpheus")
+                ) {
+                    list.add(id)
+                }
+            }
+            return list
+        }
     }
 
-    suspend fun validateKey(baseUrl: String, apiKey: String): GroqResult<Unit> = withContext(Dispatchers.IO) {
+    suspend fun validateKey(baseUrl: String, apiKey: String): GroqResult<List<String>> = withContext(Dispatchers.IO) {
         try {
             val endpoint = try {
                 validateEndpointUrl(baseUrl)
@@ -45,7 +68,11 @@ class GroqRepository {
             val code = c.responseCode
             val body = readBody(c)
             c.disconnect()
-            if (code in 200..299) GroqResult.Success(Unit) else GroqResult.Error("HTTP $code: ${extractErr(body)}")
+            if (code in 200..299) {
+                GroqResult.Success(parseTextModels(body))
+            } else {
+                GroqResult.Error("HTTP $code: ${extractErr(body)}")
+            }
         } catch (e: Exception) { GroqResult.Error(e.message ?: "Network error") }
     }
 
@@ -130,7 +157,15 @@ class GroqRepository {
                 val clean = Constants.sanitizeOutput(cleanRaw)
                 // fallback to sanitized raw if LLM returned empty/prefix-only
                 GroqResult.Success(if (clean.isBlank()) Constants.sanitizeOutput(rawText) else clean)
-            } else GroqResult.Error("Refine HTTP $code: ${extractErr(body)}")
+            } else {
+                val err = extractErr(body)
+                if (code == 404 && llamaModel != Constants.DEFAULT_LLAMA &&
+                    (err.contains("does not exist") || err.contains("access"))
+                ) {
+                    return@withContext refine(baseUrl, apiKey, Constants.DEFAULT_LLAMA, rawText, systemPrompt, temperature)
+                }
+                GroqResult.Error("Refine HTTP $code: $err")
+            }
         } catch (e: Exception) { GroqResult.Error(e.message ?: "Refine failed") }
     }
 

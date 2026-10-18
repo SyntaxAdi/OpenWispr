@@ -64,8 +64,29 @@ class SettingsRepository(context: Context) {
         set(v) = sp.edit().putString("whisper_model", v).apply()
 
     var llama: String
-        get() = sp.getString("llama_model", Constants.DEFAULT_LLAMA) ?: Constants.DEFAULT_LLAMA
+        get() {
+            val v = sp.getString("llama_model", Constants.DEFAULT_LLAMA) ?: Constants.DEFAULT_LLAMA
+            return if (v == "llama-3.1-8b-instant" || v.isBlank()) Constants.DEFAULT_LLAMA else v
+        }
         set(v) = sp.edit().putString("llama_model", v).apply()
+
+    var availableLlamaModels: List<String>
+        get() {
+            val raw = sp.getString("available_llama_models", null)
+            return if (raw.isNullOrBlank()) {
+                Constants.LLAMA_MODELS
+            } else {
+                try {
+                    val arr = JSONArray(raw)
+                    (0 until arr.length()).map { arr.getString(it) }
+                } catch (_: Exception) { Constants.LLAMA_MODELS }
+            }
+        }
+        set(v) {
+            val arr = JSONArray()
+            v.forEach { arr.put(it) }
+            sp.edit().putString("available_llama_models", arr.toString()).apply()
+        }
 
     var bubbleDp: Int
         get() = sp.getInt("bubble_dp", Constants.DEFAULT_BUBBLE_DP)

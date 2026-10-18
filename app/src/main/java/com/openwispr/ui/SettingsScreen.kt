@@ -344,7 +344,7 @@ fun SettingsScreen(
                         SettingsCategoryCard(
                             sectionNumber = "02",
                             title = "GROQ CLOUD & AI ENGINES",
-                            subtitle = "API key, Whisper STT & Llama grammar refiner",
+                            subtitle = "API key, Whisper STT & ${Constants.formatShortModelName(llama)} refiner",
                             statusTag = if (apiKey.isNotBlank()) "ONLINE" else "KEY REQUIRED",
                             onClick = { currentSection = SettingsSection.AiCloudEngines }
                         )
@@ -538,6 +538,13 @@ fun SettingsScreen(
                                                     is GroqResult.Success -> {
                                                         validateOk = true
                                                         validateMsg = "✓ VERIFIED (${elapsedMs}ms)"
+                                                        if (res.data.isNotEmpty()) {
+                                                            settings.availableLlamaModels = res.data
+                                                            if (!res.data.contains(settings.llama)) {
+                                                                settings.llama = res.data.first()
+                                                                llama = res.data.first()
+                                                            }
+                                                        }
                                                     }
                                                     is GroqResult.Error -> {
                                                         validateOk = false
@@ -622,7 +629,7 @@ fun SettingsScreen(
                                     label = "Text Refinement Model",
                                     category = "POST-PROCESSOR",
                                     selectedValue = llama,
-                                    options = Constants.LLAMA_MODELS,
+                                    options = settings.availableLlamaModels.ifEmpty { Constants.LLAMA_MODELS },
                                     textFieldColors = textFieldColors
                                 ) {
                                     llama = it
@@ -1535,7 +1542,7 @@ private fun SettingsTelemetryStrip(
     ) {
         TelemetryStripItem(
             label = "ASR PIPELINE",
-            value = if (whisperModel.contains("turbo")) "WHISPER TURBO" else "WHISPER V3"
+            value = Constants.formatShortModelName(whisperModel)
         )
         Box(
             modifier = Modifier
@@ -1545,7 +1552,7 @@ private fun SettingsTelemetryStrip(
         )
         TelemetryStripItem(
             label = "REFINER",
-            value = if (llamaModel.contains("70b")) "LLAMA 70B" else "LLAMA 8B"
+            value = Constants.formatShortModelName(llamaModel)
         )
         Box(
             modifier = Modifier
@@ -1721,7 +1728,7 @@ private fun ModelDropdown(
             onExpandedChange = { expanded = !expanded }
         ) {
             OutlinedTextField(
-                value = selectedValue,
+                value = Constants.formatShortModelName(selectedValue),
                 onValueChange = {},
                 readOnly = true,
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
@@ -1760,13 +1767,21 @@ private fun ModelDropdown(
                                             .background(ColorRedAccent)
                                     )
                                 }
-                                Text(
-                                    text = model,
-                                    color = if (isSelected) ColorRedAccent else Color.White,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 11.5.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                )
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = Constants.formatShortModelName(model),
+                                        color = if (isSelected) ColorRedAccent else Color.White,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                    Text(
+                                        text = model,
+                                        color = ColorSubtle,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 9.sp
+                                    )
+                                }
                             }
                         },
                         onClick = {

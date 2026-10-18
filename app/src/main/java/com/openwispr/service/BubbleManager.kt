@@ -605,6 +605,7 @@ class BubbleManager(
         val targetPkg = if (initialAppPackage != "unknown") initialAppPackage else (service.rootInActiveWindow?.packageName?.toString() ?: "unknown")
         val effectivePrompt = settings.getEffectiveSystemPrompt(targetPkg)
         val effectiveMode = settings.getEffectiveFormalityMode(targetPkg)
+
         scope.launch {
             val apiKey = settings.apiKey
             val baseUrl = settings.baseUrl
