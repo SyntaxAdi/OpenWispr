@@ -156,9 +156,11 @@ install_and_stream_logs() {
   echo "━━━ Launching OpenWispr ━━━"
   adb -s "$TARGET_DEVICE" shell am start -n com.openwispr/.MainActivity
 
+  local log_file="$SCRIPT_DIR/openwispr-logs.txt"
   echo ""
   echo "━━━ Streaming Logcat ━━━"
-  trap 'echo -e "\n→ Logcat streaming stopped."; exit 0' INT TERM
+  echo "Logs will be saved to: $log_file"
+  trap 'echo -e "\n→ Logcat streaming stopped. Saved to: '"$log_file"'"; exit 0' INT TERM
 
   adb -s "$TARGET_DEVICE" logcat -c || true
 
@@ -172,10 +174,12 @@ install_and_stream_logs() {
   echo "Streaming logs for com.openwispr (PID: ${pid:-detecting}). Press Ctrl+C to exit."
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+  echo "=== OpenWispr Logcat Session: $(date '+%Y-%m-%d %H:%M:%S') (PID: ${pid:-detecting}) ===" > "$log_file"
+
   if [[ -n "$pid" ]]; then
-    adb -s "$TARGET_DEVICE" logcat -v color --pid="$pid"
+    adb -s "$TARGET_DEVICE" logcat -v threadtime --pid="$pid" | tee -a "$log_file"
   else
-    adb -s "$TARGET_DEVICE" logcat -v color -e "com.openwispr|OpenWispr|AndroidRuntime|FATAL"
+    adb -s "$TARGET_DEVICE" logcat -v threadtime -e "com.openwispr|OpenWispr|AndroidRuntime|FATAL" | tee -a "$log_file"
   fi
 }
 

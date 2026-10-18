@@ -9,3 +9,5 @@ local.properties
 OpenWispr-*.apk
 design/
 brag-output/
+openwispr-logs.txt
+*.log
