@@ -198,6 +198,16 @@ fun SideNavDrawer(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 SideNavCardItem(
+                    title = "TRANSLATE",
+                    subtitle = "Multilingual speech engine",
+                    iconRes = R.drawable.ic_translate,
+                    isSelected = currentTab == NavTab.Translation,
+                    onClick = { onSelectTab(NavTab.Translation) }
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                SideNavCardItem(
                     title = "HISTORY",
                     subtitle = "Dictation logs & archive",
                     iconRes = R.drawable.ic_history,

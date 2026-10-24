@@ -611,6 +611,9 @@ class BubbleManager(
             val baseUrl = settings.baseUrl
             val whisper = settings.whisper
             val llama = settings.llama
+            val spokenLang = settings.translationSpokenLanguage
+            val targetLang = settings.translationTargetLanguage
+            val isTranslating = settings.isTranslationEnabled
             if (apiKey.isBlank()) {
                 withContext(Dispatchers.Main) {
                     android.util.Log.w("OpenWispr:Bubble", "Groq API key missing in Settings")
@@ -628,7 +631,7 @@ class BubbleManager(
                 file.delete()
                 return@launch
             }
-            when (val tr = groq.transcribe(baseUrl, apiKey, whisper, file)) {
+            when (val tr = groq.transcribe(baseUrl, apiKey, whisper, file, spokenLang)) {
                 is GroqResult.Error -> withContext(Dispatchers.Main) {
                     android.util.Log.e("OpenWispr:Bubble", "Transcription failed: ${tr.message}")
                     Toast.makeText(service, "Transcription failed: ${tr.message.take(35)}", Toast.LENGTH_SHORT).show()
@@ -645,13 +648,17 @@ class BubbleManager(
                 is GroqResult.Success -> {
                     val raw = tr.data
                     val temperature = if (effectiveMode == FormalityMode.CUSTOM) 0.7 else 0.2
-                    when (val rf = groq.refine(baseUrl, apiKey, llama, raw, effectivePrompt, temperature)) {
+                    when (val rf = groq.refine(baseUrl, apiKey, llama, raw, effectivePrompt, temperature, if (isTranslating) targetLang else null)) {
                         is GroqResult.Error -> {
                             val safeRaw = settings.applyFormalityStyling(Constants.sanitizeOutput(raw), effectiveMode)
                             historyRepo.insertTranscript(safeRaw, targetPkg, durationMs)
                             withContext(Dispatchers.Main) {
                                 val injected = TextInjector.inject(service, safeRaw)
-                                statusText?.text = if (injected) "Pasted ✓" else "Copied"
+                                statusText?.text = if (isTranslating) {
+                                    if (injected) "Raw Pasted ✓" else "Raw Copied"
+                                } else {
+                                    if (injected) "Pasted ✓" else "Copied"
+                                }
                                 tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
                                 tickLoader?.visibility = View.GONE
                                 handler.postDelayed({
@@ -666,7 +673,11 @@ class BubbleManager(
                             historyRepo.insertTranscript(clean, targetPkg, durationMs)
                             withContext(Dispatchers.Main) {
                                 val injected = TextInjector.inject(service, clean)
-                                statusText?.text = if (injected) "Pasted ✓" else "Copied"
+                                statusText?.text = if (isTranslating) {
+                                    if (injected) "Translated ✓" else "Translated (Copied)"
+                                } else {
+                                    if (injected) "Pasted ✓" else "Copied"
+                                }
                                 tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
                                 tickLoader?.visibility = View.GONE
                                 handler.postDelayed({

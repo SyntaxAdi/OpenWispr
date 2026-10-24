@@ -11,3 +11,4 @@ design/
 brag-output/
 openwispr-logs.txt
 *.log
+[0-9]*.png

@@ -88,6 +88,72 @@ class SettingsRepository(context: Context) {
             sp.edit().putString("available_llama_models", arr.toString()).apply()
         }
 
+    var translationSpokenLanguage: String
+        get() = sp.getString("translation_spoken_language", "auto") ?: "auto"
+        set(v) = sp.edit().putString("translation_spoken_language", v).apply()
+
+    var translationTargetLanguage: String
+        get() = sp.getString("translation_target_language", "off") ?: "off"
+        set(v) = sp.edit().putString("translation_target_language", v).apply()
+
+    var recentSpokenLanguages: List<String>
+        get() {
+            val raw = sp.getString("recent_spoken_languages_v2", null)
+            return if (raw.isNullOrBlank()) {
+                listOf("auto")
+            } else {
+                try {
+                    val arr = JSONArray(raw)
+                    val list = (0 until arr.length()).map { arr.getString(it) }
+                    if (list.isEmpty()) listOf("auto") else list
+                } catch (_: Exception) {
+                    listOf("auto")
+                }
+            }
+        }
+        set(v) {
+            val arr = JSONArray()
+            v.forEach { arr.put(it) }
+            sp.edit().putString("recent_spoken_languages_v2", arr.toString()).apply()
+        }
+
+    private fun recordRecentChoice(code: String, current: List<String>, defaultKey: String): List<String> {
+        val distinctTail = (listOf(code) + current).filter { it != defaultKey }.distinct()
+        return (listOf(defaultKey) + distinctTail).take(8)
+    }
+
+    fun recordSpokenLanguageChoice(code: String) {
+        recentSpokenLanguages = recordRecentChoice(code, recentSpokenLanguages, "auto")
+    }
+
+    var recentTargetLanguages: List<String>
+        get() {
+            val raw = sp.getString("recent_target_languages_v2", null)
+            return if (raw.isNullOrBlank()) {
+                listOf("off")
+            } else {
+                try {
+                    val arr = JSONArray(raw)
+                    val list = (0 until arr.length()).map { arr.getString(it) }
+                    if (list.isEmpty()) listOf("off") else list
+                } catch (_: Exception) {
+                    listOf("off")
+                }
+            }
+        }
+        set(v) {
+            val arr = JSONArray()
+            v.forEach { arr.put(it) }
+            sp.edit().putString("recent_target_languages_v2", arr.toString()).apply()
+        }
+
+    fun recordTargetLanguageChoice(code: String) {
+        recentTargetLanguages = recordRecentChoice(code, recentTargetLanguages, "off")
+    }
+
+    val isTranslationEnabled: Boolean
+        get() = translationTargetLanguage != "off"
+
     var bubbleDp: Int
         get() = sp.getInt("bubble_dp", Constants.DEFAULT_BUBBLE_DP)
         set(v) = sp.edit().putInt("bubble_dp", v.coerceIn(Constants.MIN_BUBBLE_DP, Constants.MAX_BUBBLE_DP)).apply()

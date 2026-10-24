@@ -28,10 +28,11 @@ import com.openwispr.ui.HomeScreen
 import com.openwispr.ui.PersonaScreen
 import com.openwispr.ui.SettingsScreen
 import com.openwispr.ui.SideNavDrawer
+import com.openwispr.ui.TranslationScreen
 import kotlinx.coroutines.launch
 
 enum class NavTab {
-    Home, History, Persona, Settings
+    Home, History, Persona, Translation, Settings
 }
 
 class MainActivity : ComponentActivity() {
@@ -103,6 +104,10 @@ class MainActivity : ComponentActivity() {
                                 onBackToHome = { currentTab = NavTab.Home }
                             )
                             NavTab.Persona -> PersonaScreen(
+                                settings = settings,
+                                onOpenDrawer = { scope.launch { drawerState.open() } }
+                            )
+                            NavTab.Translation -> TranslationScreen(
                                 settings = settings,
                                 onOpenDrawer = { scope.launch { drawerState.open() } }
                             )

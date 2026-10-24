@@ -124,6 +124,23 @@ build_apk() {
   BUILT_APK_PATH="./$dest"
 }
 
+take_screenshot() {
+  local n=1
+  while [[ -f "$SCRIPT_DIR/${n}.png" ]]; do
+    ((n++))
+  done
+  local target_file="$SCRIPT_DIR/${n}.png"
+
+  echo ""
+  echo "📸 Taking screenshot..."
+  if adb -s "$TARGET_DEVICE" exec-out screencap -p > "$target_file" 2>/dev/null && [[ -s "$target_file" ]]; then
+    echo "✓ Screenshot saved: ${n}.png ($target_file)"
+  else
+    rm -f "$target_file" 2>/dev/null || true
+    echo "✗ Screenshot capture failed. Ensure device is unlocked and authorized."
+  fi
+}
+
 install_and_stream_logs() {
   local apk_path="$1"
   if ! command -v adb >/dev/null 2>&1; then
@@ -160,7 +177,6 @@ install_and_stream_logs() {
   echo ""
   echo "━━━ Streaming Logcat ━━━"
   echo "Logs will be saved to: $log_file"
-  trap 'echo -e "\n→ Logcat streaming stopped. Saved to: '"$log_file"'"; exit 0' INT TERM
 
   adb -s "$TARGET_DEVICE" logcat -c || true
 
@@ -171,15 +187,57 @@ install_and_stream_logs() {
     sleep 0.25
   done
 
-  echo "Streaming logs for com.openwispr (PID: ${pid:-detecting}). Press Ctrl+C to exit."
+  echo "Streaming logs for com.openwispr (PID: ${pid:-detecting})."
+  echo "Controls: Press 's' to take screenshot, 'q' or Ctrl+C to exit."
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
   echo "=== OpenWispr Logcat Session: $(date '+%Y-%m-%d %H:%M:%S') (PID: ${pid:-detecting}) ===" > "$log_file"
 
+  local adb_pid=""
+  local tail_pid=""
+
+  cleanup_streaming() {
+    trap - INT TERM EXIT
+    if [[ -n "$adb_pid" ]] && kill -0 "$adb_pid" 2>/dev/null; then
+      kill "$adb_pid" 2>/dev/null || true
+      wait "$adb_pid" 2>/dev/null || true
+    fi
+    if [[ -n "$tail_pid" ]] && kill -0 "$tail_pid" 2>/dev/null; then
+      kill "$tail_pid" 2>/dev/null || true
+      wait "$tail_pid" 2>/dev/null || true
+    fi
+    echo -e "\n→ Logcat streaming stopped. Saved to: $log_file"
+    exit 0
+  }
+  trap cleanup_streaming INT TERM EXIT
+
   if [[ -n "$pid" ]]; then
-    adb -s "$TARGET_DEVICE" logcat -v threadtime --pid="$pid" | tee -a "$log_file"
+    adb -s "$TARGET_DEVICE" logcat -v threadtime --pid="$pid" >> "$log_file" 2>&1 &
   else
-    adb -s "$TARGET_DEVICE" logcat -v threadtime -e "com.openwispr|OpenWispr|AndroidRuntime|FATAL" | tee -a "$log_file"
+    adb -s "$TARGET_DEVICE" logcat -v threadtime -e "com.openwispr|OpenWispr|AndroidRuntime|FATAL" >> "$log_file" 2>&1 &
+  fi
+  adb_pid=$!
+
+  tail -n +1 -f "$log_file" &
+  tail_pid=$!
+
+  if [[ -t 0 ]]; then
+    while true; do
+      if read -r -s -n 1 key; then
+        case "$key" in
+          s|S)
+            take_screenshot
+            ;;
+          q|Q)
+            cleanup_streaming
+            ;;
+        esac
+      else
+        break
+      fi
+    done
+  else
+    wait "$adb_pid" 2>/dev/null || true
   fi
 }
 
@@ -189,7 +247,7 @@ show_menu() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo "  1) Build release APK"
   echo "  2) Build debug APK"
-  echo "  3) Build debug APK + install via ADB + stream logs"
+  echo "  3) Build debug APK + install via ADB + stream logs (press 's' for screenshot)"
   echo "  4) Exit"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
@@ -214,7 +272,7 @@ if [[ $# -gt 0 ]]; then
       echo "Usage: ./build.sh [1|2|3|4|release|debug|install|exit]"
       echo "  1, release: Build release APK"
       echo "  2, debug:   Build debug APK"
-      echo "  3, install: Build debug APK, install via ADB, stream logs"
+      echo "  3, install: Build debug APK, install via ADB, stream logs ('s' for screenshot)"
       echo "  4, exit:    Exit"
       exit 0
       ;;

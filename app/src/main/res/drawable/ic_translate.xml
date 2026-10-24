@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Globe outline with lat/long lines -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M 12,2 C 6.48,2 2,6.48 2,12 C 2,17.52 6.48,22 12,22 C 17.52,22 22,17.52 22,12 C 22,6.48 17.52,2 12,2 Z" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:pathData="M 2,12 H 22" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M 12,2 C 14.5,5.5 16,8.6 16,12 C 16,15.4 14.5,18.5 12,22 C 9.5,18.5 8,15.4 8,12 C 8,8.6 9.5,5.5 12,2 Z" />
+    <!-- Nothing Red terminal accent dot -->
+    <path
+        android:fillColor="#FF2E2E"
+        android:pathData="M 18,6 A 1.2,1.2 0 1,1 17.99,6 Z" />
+</vector>

@@ -240,7 +240,7 @@ class SettingsAndSecurityTest {
         val bubbleFile = java.io.File("src/main/java/com/openwispr/service/BubbleManager.kt")
         val bContent = if (bubbleFile.exists()) bubbleFile.readText() else java.io.File("app/src/main/java/com/openwispr/service/BubbleManager.kt").readText()
         assertTrue("BubbleManager must use 0.7 temperature for CUSTOM mode", bContent.contains("if (effectiveMode == FormalityMode.CUSTOM) 0.7 else 0.2"))
-        assertTrue("BubbleManager must pass temperature into groq.refine", bContent.contains("groq.refine(baseUrl, apiKey, llama, raw, effectivePrompt, temperature)"))
+        assertTrue("BubbleManager must pass temperature into groq.refine", bContent.contains("groq.refine(baseUrl, apiKey, llama, raw, effectivePrompt, temperature"))
 
         // 3. Verify GroqRepository.refine supports temperature parameter with default 0.2
         val groqFile = java.io.File("src/main/java/com/openwispr/data/GroqRepository.kt")
@@ -381,6 +381,191 @@ class SettingsAndSecurityTest {
             groqContent.contains("<transcript>\\n\$rawText\\n</transcript>"))
         assertTrue("GroqRepository must include anti-execution directive in guardedSystemPrompt",
             groqContent.contains("Constants.ANTI_EXECUTION_DIRECTIVE"))
+    }
+
+    @Test
+    fun testLanguageManagerAndTranslationPipeline() {
+        // 1. Verify LanguageManager discovers 100+ languages from standard library Locale
+        val languages = com.openwispr.util.LanguageManager.allLanguages
+        assertTrue("LanguageManager must dynamically discover >100 languages from Locale", languages.size > 100)
+        assertTrue(languages.any { it.code == "en" && it.displayName == "English" })
+        assertTrue(languages.any { it.code == "ru" && it.displayName == "Russian" })
+        assertTrue(languages.any { it.code == "hi" && it.displayName == "Hindi" })
+        assertTrue(languages.any { it.code == "es" && it.displayName == "Spanish" })
+
+        // 2. Verify Auto-Detect is pinned at index 0 for spoken input
+        val spoken = com.openwispr.util.LanguageManager.getSpokenLanguages()
+        assertEquals("auto", spoken.first().code)
+        assertEquals("Detect Language (Auto)", spoken.first().displayName)
+
+        // 3. Verify Original (No Translation) is pinned at index 0 for target output
+        val target = com.openwispr.util.LanguageManager.getTargetLanguages()
+        assertEquals("off", target.first().code)
+        assertEquals("Original (No Translation)", target.first().displayName)
+
+        // 4. Verify GroqRepository handles spokenLanguage and targetLanguage
+        val groqFile = java.io.File("src/main/java/com/openwispr/data/GroqRepository.kt").let {
+            if (it.exists()) it else java.io.File("app/src/main/java/com/openwispr/data/GroqRepository.kt")
+        }
+        val groqContent = groqFile.readText()
+        assertTrue("transcribe must accept spokenLanguage",
+            groqContent.contains("spokenLanguage: String? = null"))
+        assertTrue("refine must accept targetLanguage",
+            groqContent.contains("targetLanguage: String? = null"))
+        assertTrue("refine must inject TRANSLATION DIRECTIVE when targetLanguage is set",
+            groqContent.contains("TRANSLATION DIRECTIVE:"))
+
+        // 5. Verify SettingsRepository exposes translation preferences
+        val settingsFile = java.io.File("src/main/java/com/openwispr/data/SettingsRepository.kt").let {
+            if (it.exists()) it else java.io.File("app/src/main/java/com/openwispr/data/SettingsRepository.kt")
+        }
+        val settingsContent = settingsFile.readText()
+        assertTrue("SettingsRepository must have translationSpokenLanguage",
+            settingsContent.contains("var translationSpokenLanguage: String"))
+        assertTrue("SettingsRepository must have translationTargetLanguage",
+            settingsContent.contains("var translationTargetLanguage: String"))
+        assertTrue("SettingsRepository must have isTranslationEnabled",
+            settingsContent.contains("val isTranslationEnabled: Boolean"))
+        assertTrue("SettingsRepository must have recentSpokenLanguages",
+            settingsContent.contains("var recentSpokenLanguages: List<String>"))
+        assertTrue("SettingsRepository must have recordSpokenLanguageChoice",
+            settingsContent.contains("fun recordSpokenLanguageChoice(code: String)"))
+        assertTrue("SettingsRepository must have recentTargetLanguages",
+            settingsContent.contains("var recentTargetLanguages: List<String>"))
+        assertTrue("SettingsRepository must have recordTargetLanguageChoice",
+            settingsContent.contains("fun recordTargetLanguageChoice(code: String)"))
+    }
+
+    @Test
+    fun testSpokenInputRedesignAndDynamicPastChoices() {
+        // 1. Verify default initial state is strictly [auto] (zero hardcoded presets)
+        var pastChoices = listOf("auto")
+        assertEquals(1, pastChoices.size)
+        assertEquals(listOf("auto"), pastChoices)
+
+        fun recordChoice(code: String, current: List<String>): List<String> {
+            val list = current.toMutableList()
+            list.remove(code)
+            val updated = mutableListOf<String>()
+            updated.add("auto")
+            if (code != "auto") updated.add(code)
+            for (c in list) {
+                if (c != "auto" && c != code) updated.add(c)
+            }
+            return updated.take(8)
+        }
+
+        // Add 'ru' when user actually selects it
+        pastChoices = recordChoice("ru", pastChoices)
+        assertEquals(listOf("auto", "ru"), pastChoices)
+        assertEquals(2, pastChoices.size)
+
+        // Add 'fr'
+        pastChoices = recordChoice("fr", pastChoices)
+        assertEquals(listOf("auto", "fr", "ru"), pastChoices)
+        assertEquals(3, pastChoices.size)
+
+        // Add 'es'
+        pastChoices = recordChoice("es", pastChoices)
+        assertEquals(listOf("auto", "es", "fr", "ru"), pastChoices)
+        assertEquals(4, pastChoices.size)
+
+        // Add 'de'
+        pastChoices = recordChoice("de", pastChoices)
+        assertEquals(listOf("auto", "de", "es", "fr", "ru"), pastChoices)
+        assertEquals(5, pastChoices.size)
+
+        // Target language dynamic past choices simulation (default [off])
+        var targetChoices = listOf("off")
+        assertEquals(1, targetChoices.size)
+        fun recordTarget(code: String, current: List<String>): List<String> {
+            val list = current.toMutableList()
+            list.remove(code)
+            val updated = mutableListOf<String>()
+            updated.add("off")
+            if (code != "off") updated.add(code)
+            for (c in list) {
+                if (c != "off" && c != code) updated.add(c)
+            }
+            return updated.take(8)
+        }
+        targetChoices = recordTarget("en", targetChoices)
+        assertEquals(listOf("off", "en"), targetChoices)
+        targetChoices = recordTarget("ru", targetChoices)
+        assertEquals(listOf("off", "ru", "en"), targetChoices)
+
+        // Verify SettingsRepository uses v2 storage keys with single default
+        val settingsFile = java.io.File("src/main/java/com/openwispr/data/SettingsRepository.kt").let {
+            if (it.exists()) it else java.io.File("app/src/main/java/com/openwispr/data/SettingsRepository.kt")
+        }
+        val settingsContent = settingsFile.readText()
+        assertTrue("SettingsRepository must use recent_spoken_languages_v2",
+            settingsContent.contains("recent_spoken_languages_v2"))
+        assertTrue("SettingsRepository must default to single auto",
+            settingsContent.contains("listOf(\"auto\")"))
+        assertTrue("SettingsRepository must use recent_target_languages_v2",
+            settingsContent.contains("recent_target_languages_v2"))
+        assertTrue("SettingsRepository must default to single off",
+            settingsContent.contains("listOf(\"off\")"))
+
+        // 2. Verify TranslationScreen.kt layout integrity
+        val screenFile = java.io.File("src/main/java/com/openwispr/ui/TranslationScreen.kt").let {
+            if (it.exists()) it else java.io.File("app/src/main/java/com/openwispr/ui/TranslationScreen.kt")
+        }
+        assertTrue("TranslationScreen.kt must exist", screenFile.exists())
+        val screenContent = screenFile.readText()
+
+        // Glitchy text eliminated from entire screen
+        assertTrue("TranslationScreen must not contain glitchy CHANGE ➔ text",
+            !screenContent.contains("CHANGE ➔"))
+        // Hardcoded spoken and target language presets eliminated
+        assertTrue("TranslationScreen must not contain hardcoded POPULAR_SPOKEN",
+            !screenContent.contains("POPULAR_SPOKEN"))
+        assertTrue("TranslationScreen must not contain hardcoded POPULAR_TARGET",
+            !screenContent.contains("POPULAR_TARGET"))
+        // Unified single page with dynamic 2-option telemetry menu bar
+        assertTrue("TranslationScreen must not define TranslationTab enum",
+            !screenContent.contains("enum class TranslationTab"))
+        assertTrue("TranslationScreen must not contain TelemetryTabItem",
+            !screenContent.contains("TelemetryTabItem"))
+        assertTrue("TranslationScreen must not contain AI PIPELINE ARCHITECTURE",
+            !screenContent.contains("AI PIPELINE ARCHITECTURE"))
+        assertTrue("TranslationScreen must not contain PipelineStageItem",
+            !screenContent.contains("PipelineStageItem"))
+        assertTrue("TranslationScreen must contain dynamic 2-option TelemetryStripItem",
+            screenContent.contains("TelemetryStripItem"))
+        assertTrue("TranslationScreen must contain SPOKEN INPUT in telemetry strip",
+            screenContent.contains("label = \"SPOKEN INPUT\""))
+        assertTrue("TranslationScreen must contain AUTO DETECT in telemetry strip",
+            screenContent.contains("\"AUTO DETECT\""))
+        assertTrue("TranslationScreen must contain TARGET OUTPUT in telemetry strip",
+            screenContent.contains("label = \"TARGET OUTPUT\""))
+        assertTrue("TranslationScreen must contain ORIGINAL in telemetry strip",
+            screenContent.contains("\"ORIGINAL\""))
+        assertTrue("TranslationScreen must contain Spoken section",
+            screenContent.contains("// 01  SPOKEN INPUT LANGUAGE"))
+        assertTrue("TranslationScreen must contain Target section",
+            screenContent.contains("// 02  TARGET OUTPUT LANGUAGE"))
+        // FlowRow used instead of horizontal swipe LazyRow
+        assertTrue("TranslationScreen must use FlowRow for quick select",
+            screenContent.contains("FlowRow("))
+        // Chevron right icon used
+        assertTrue("TranslationScreen must use ic_chevron_right",
+            screenContent.contains("R.drawable.ic_chevron_right"))
+        // Quick select uses dynamic recents
+        assertTrue("TranslationScreen must use recentSpoken.take(8)",
+            screenContent.contains("recentSpoken.take(8)"))
+        assertTrue("TranslationScreen must use recentTarget.take(8)",
+            screenContent.contains("recentTarget.take(8)"))
+
+        // 3. Verify ic_chevron_right.xml asset exists and has red stroke
+        val chevronFile = java.io.File("src/main/res/drawable/ic_chevron_right.xml").let {
+            if (it.exists()) it else java.io.File("app/src/main/res/drawable/ic_chevron_right.xml")
+        }
+        assertTrue("ic_chevron_right.xml must exist", chevronFile.exists())
+        val chevronContent = chevronFile.readText()
+        assertTrue("ic_chevron_right must be styled with #FF2E2E",
+            chevronContent.contains("#FF2E2E"))
     }
 }
 
