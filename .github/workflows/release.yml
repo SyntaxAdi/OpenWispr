@@ -49,7 +49,7 @@ jobs:
       - name: Compile Release APK
         run: ./gradlew assembleRelease --no-daemon --build-cache
 
-      - name: Package Release Asset
+      - name: Package Release Asset & Generate Notes
         id: prep
         run: |
           COUNT=$(git rev-list --count HEAD)
@@ -69,6 +69,53 @@ jobs:
           SRC_APK="app/build/outputs/apk/release/app-release.apk"
           DEST_APK="OpenWispr-${TAG}.apk"
           cp "$SRC_APK" "$DEST_APK"
+          SHA256=$(sha256sum "$DEST_APK" | awk '{print $1}')
+          SIZE=$(du -h "$DEST_APK" | cut -f1)
+
+          PREV_TAG=$(git tag --sort=-creatordate | grep -v "^${TAG}$" | head -n 1 || echo "")
+          COMMITS=""
+          if [[ -n "$PREV_TAG" ]]; then
+            COMMITS=$(git log "${PREV_TAG}..HEAD" --no-merges --pretty=format:"- %s (\`%h\`)")
+          fi
+          if [[ -z "$COMMITS" ]]; then
+            COMMITS=$(git log -n 5 --no-merges --pretty=format:"- %s (\`%h\`)")
+          fi
+
+          cat <<EOF | sed 's/^          //' > release_notes.md
+          # OpenWispr ${TAG} — Real-Time Translation & Persona Styling
+
+          A faster, more natural voice dictation experience for Android. Powered by Groq Whisper Large v3 Turbo, with multilingual translation and a minimal Nothing OS-inspired interface.
+
+          ---
+
+          ### What's New in ${TAG}
+
+          ${COMMITS}
+
+          ---
+
+          ### Installation & Sideloading
+
+          OpenWispr uses Android Accessibility Services to insert dictated text directly into compatible apps without relying on the clipboard.
+
+          If Play Protect displays a warning during sideloading:
+          1. Open **Google Play Store** -> Profile -> **Play Protect**.
+          2. Tap the **Gear Icon (Settings)** in top right.
+          3. Temporarily turn off **"Scan apps with Play Protect"**, install the APK, and re-enable scanning.
+
+          ---
+
+          ### APK Verification
+
+          | Property | Value |
+          |---|---|
+          | File | \`${DEST_APK}\` |
+          | Size | ~${SIZE} |
+          | SHA-256 | \`${SHA256}\` |
+
+          **Full Changelog:** https://github.com/${{ github.repository }}/commits/${TAG}
+          EOF
+
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "apk=$DEST_APK" >> "$GITHUB_OUTPUT"
 
@@ -80,6 +127,8 @@ jobs:
           APK="${{ steps.prep.outputs.apk }}"
           gh release create "$TAG" "$APK" \
             --title "OpenWispr $TAG" \
-            --generate-notes \
-            --verify-tag=false || \
-          gh release upload "$TAG" "$APK" --clobber
+            --notes-file release_notes.md \
+            --verify-tag=false || {
+            gh release edit "$TAG" --title "OpenWispr $TAG" --notes-file release_notes.md
+            gh release upload "$TAG" "$APK" --clobber
+          }
