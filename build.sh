@@ -96,9 +96,12 @@ build_apk() {
     exit 1
   fi
 
-  local version
-  version="$(grep -E 'versionName\s*=' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')"
-  version="${version:-1.0.0}"
+  local git_count
+  git_count=$(git rev-list --count HEAD 2>/dev/null || echo 1)
+  local major=$((git_count / 100))
+  local minor=$(((git_count / 10) % 10))
+  local patch=$((git_count % 10))
+  local version="${major}.${minor}.${patch}"
   local date_str
   date_str="$(date +%Y%m%d)"
   local dest="OpenWispr-${version}-${build_type}-${date_str}.apk"

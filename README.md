@@ -378,6 +378,20 @@ JAVA_HOME=/usr/lib/jvm/java-17-openjdk ./gradlew assembleDebug
 
 ---
 
+### Sideloading & Google Play Protect
+
+When installing downloaded release APKs from a browser or chat app on Android, Google Play Protect's **Financial Fraud Protection** may display:
+
+> *"App blocked to protect your device — This app can request access to sensitive data."*
+
+**Why this happens:** Google automatically flags internet-sideloaded APKs declaring `BIND_ACCESSIBILITY_SERVICE` (used by OpenWispr solely to monitor keyboard appearance and paste transcribed text).
+
+**How to install:**
+- **Option 1 (Fastest):** Open **Google Play Store** $\rightarrow$ tap Profile Icon $\rightarrow$ **Play Protect** $\rightarrow$ Gear Icon (Settings) $\rightarrow$ temporarily toggle off **"Scan apps with Play Protect"** $\rightarrow$ Install APK $\rightarrow$ re-enable scanning.
+- **Option 2 (ADB):** Connect phone to computer and run `adb install -r OpenWispr-*.apk` (bypasses internet-sideload filters).
+
+---
+
 ### Configuration & Permissions
 
 Upon launching OpenWispr for the first time:

@@ -12,14 +12,31 @@ android {
         minSdk = 26
         targetSdk = 34
         // Auto-increment from git history so `adb install -r` / tapping APK over old build always replaces code.
-        // Fallback to 11 if git unavailable (container shallow clone).
+        // Fallback to 1 if git unavailable (container shallow clone).
         val gitCount = try {
             providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }
                 .standardOutput.asText.get().trim().toInt()
-        } catch (_: Exception) { 11 }
-        versionCode = gitCount.coerceAtLeast(11)
-        versionName = "1.1.0"
+        } catch (_: Exception) { 1 }
+        versionCode = gitCount.coerceAtLeast(1)
+        val major = gitCount / 100
+        val minor = (gitCount / 10) % 10
+        val patch = gitCount % 10
+        versionName = "$major.$minor.$patch"
         vectorDrawables { useSupportLibrary = true }
+    }
+
+    signingConfigs {
+        create("release") {
+            val keystoreFile = file("openwispr-release.jks")
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "openwispr"
+                keyAlias = System.getenv("KEY_ALIAS") ?: "openwispr"
+                keyPassword = System.getenv("KEY_PASSWORD") ?: "openwispr"
+            } else {
+                initWith(getByName("debug"))
+            }
+        }
     }
 
     buildTypes {
@@ -27,7 +44,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
         debug {
             isMinifyEnabled = false
@@ -51,6 +68,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
 

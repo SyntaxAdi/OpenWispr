@@ -4,4 +4,5 @@
     <string name="notif_channel_name">Open Wispr Recording</string>
     <string name="notif_channel_desc">Shows when listening</string>
     <string name="notif_listening">Listening… tap ✓ to finish</string>
+    <string name="accessibility_service_desc">OpenWispr uses Accessibility solely to position its voice dictation capsule above the on-screen keyboard and insert transcribed speech into your active text field. No keystrokes, passwords, or personal data are recorded, monitored, or transmitted.</string>
 </resources>

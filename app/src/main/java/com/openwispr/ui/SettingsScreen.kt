@@ -1,5 +1,6 @@
 package com.openwispr.ui
 
+import com.openwispr.BuildConfig
 import android.os.Build
 import android.os.SystemClock
 import androidx.compose.animation.core.*
@@ -363,7 +364,7 @@ fun SettingsScreen(
                             sectionNumber = "04",
                             title = "SYSTEM TELEMETRY",
                             subtitle = "Kernel version, Compose runtime & TLS specs",
-                            statusTag = "v1.0.0",
+                            statusTag = "v${BuildConfig.VERSION_NAME}",
                             onClick = { currentSection = SettingsSection.SystemTelemetry }
                         )
                     }
@@ -931,7 +932,7 @@ fun SettingsScreen(
                         SettingsSection.SystemTelemetry -> {
                             OledSettingsCard {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    TelemetryRow(label = "APP KERNEL", value = "OpenWispr v1.0.0 (Release)")
+                                    TelemetryRow(label = "APP KERNEL", value = "OpenWispr v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})")
                                     HorizontalDivider(color = ColorBorderSubtle.copy(alpha = 0.5f), thickness = 0.5.dp)
                                     TelemetryRow(label = "UI RUNTIME", value = "Jetpack Compose + RenderThread")
                                     HorizontalDivider(color = ColorBorderSubtle.copy(alpha = 0.5f), thickness = 0.5.dp)

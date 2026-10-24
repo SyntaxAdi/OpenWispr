@@ -1,0 +1,85 @@
+# ponytail: native gh CLI over third-party marketplace release actions
+name: Release APK
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Optional tag override'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-release:
+    name: Build & Publish Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle & Caching
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Make Gradlew Executable
+        run: chmod +x gradlew
+
+      - name: Compile Release APK
+        run: ./gradlew assembleRelease --no-daemon --build-cache
+
+      - name: Package Release Asset
+        id: prep
+        run: |
+          COUNT=$(git rev-list --count HEAD)
+          MAJOR=$((COUNT / 100))
+          MINOR=$(((COUNT / 10) % 10))
+          PATCH=$((COUNT % 10))
+          CALC_VER="${MAJOR}.${MINOR}.${PATCH}"
+          TAG="${{ github.event.inputs.tag_name }}"
+          if [[ -z "$TAG" ]]; then
+            REF="${{ github.ref_name }}"
+            if [[ "$REF" == v* ]]; then
+              TAG="$REF"
+            else
+              TAG="v${CALC_VER}"
+            fi
+          fi
+          SRC_APK="app/build/outputs/apk/release/app-release.apk"
+          DEST_APK="OpenWispr-${TAG}.apk"
+          cp "$SRC_APK" "$DEST_APK"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "apk=$DEST_APK" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.prep.outputs.tag }}"
+          APK="${{ steps.prep.outputs.apk }}"
+          gh release create "$TAG" "$APK" \
+            --title "OpenWispr $TAG" \
+            --generate-notes \
+            --verify-tag=false || \
+          gh release upload "$TAG" "$APK" --clobber
