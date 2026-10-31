@@ -4,8 +4,10 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.DisplayMetrics
 import android.view.*
 import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
@@ -58,12 +60,43 @@ class BubbleManager(
     private var isKeyboardOpen = false
     private var isLayoutUpdatePending = false
     private var initialAppPackage: String = "unknown"
+    private var snoozeTargetView: View? = null
+    private var snoozeInnerPuck: View? = null
+    private var snoozeOuterRing: View? = null
+    private var snoozeParams: WindowManager.LayoutParams? = null
+    private var isSnoozeTargetAttached = false
+    private var isOverSnoozeTarget = false
+    private var toastView: View? = null
+    private var toastDismissRunnable: Runnable? = null
 
     enum class State { Idle, Recording, Processing }
 
     fun isRecording() = state == State.Recording || state == State.Processing
 
     private fun dp(v: Int): Int = (v * service.resources.displayMetrics.density).toInt()
+    private fun dp(v: Float): Int = (v * service.resources.displayMetrics.density).toInt()
+
+    private fun getRealScreenHeight(): Int {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            wm.maximumWindowMetrics.bounds.height()
+        } else {
+            val dm = DisplayMetrics()
+            @Suppress("DEPRECATION")
+            wm.defaultDisplay.getRealMetrics(dm)
+            dm.heightPixels
+        }
+    }
+
+    private fun getRealScreenWidth(): Int {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            wm.maximumWindowMetrics.bounds.width()
+        } else {
+            val dm = DisplayMetrics()
+            @Suppress("DEPRECATION")
+            wm.defaultDisplay.getRealMetrics(dm)
+            dm.widthPixels
+        }
+    }
 
     fun onKeyboardOpened(uncoveredHeight: Int) {
         if (!isKeyboardOpen || !isAttached) {
@@ -83,6 +116,7 @@ class BubbleManager(
 
     private fun showAtKeyboardCenter(uncoveredHeight: Int) {
         if (state != State.Idle) return
+        if (settings.isSnoozed()) return
         val dm = service.resources.displayMetrics
         val sizePx = dp(settings.bubbleDp)
         val centerY = (uncoveredHeight / 2) - (sizePx / 2)
@@ -116,6 +150,7 @@ class BubbleManager(
 
     fun hide() {
         if (state != State.Idle) return
+        hideSnoozeTarget(immediate = true)
         if (!isAttached) return
         snapAnimator?.cancel()
         snapAnimator = null
@@ -126,6 +161,11 @@ class BubbleManager(
     fun destroy() {
         actionDismissRunnable?.let { handler.removeCallbacks(it) }
         actionDismissRunnable = null
+        toastDismissRunnable?.let { handler.removeCallbacks(it) }
+        toastDismissRunnable = null
+        toastView?.let { try { wm.removeView(it) } catch (_: Exception) {} }
+        toastView = null
+        hideSnoozeTarget(immediate = true)
         handler.removeCallbacksAndMessages(null)
         scope.cancel()
         snapAnimator?.cancel()
@@ -280,6 +320,8 @@ class BubbleManager(
         var moved = false
         var downTime = 0L
         val touchSlop = ViewConfiguration.get(ctx).scaledTouchSlop
+        var initialBubbleCenterX = 0f
+        var initialBubbleCenterY = 0f
 
         val touchListener = View.OnTouchListener { _, ev ->
             if (state != State.Idle) return@OnTouchListener false
@@ -292,22 +334,30 @@ class BubbleManager(
                     initialY = p.y
                     initialTouchX = ev.rawX
                     initialTouchY = ev.rawY
+
+                    val loc = IntArray(2)
+                    bubbleView?.getLocationOnScreen(loc)
+                    initialBubbleCenterX = loc[0] + (bubbleView?.width ?: p.width) / 2f
+                    initialBubbleCenterY = loc[1] + (bubbleView?.height ?: p.height) / 2f
+
                     moved = false
+                    isOverSnoozeTarget = false
                     downTime = System.currentTimeMillis()
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = (ev.rawX - initialTouchX).toInt()
-                    val dy = (ev.rawY - initialTouchY).toInt()
-                    if (!moved && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                    val deltaX = (ev.rawX - initialTouchX).toInt()
+                    val deltaY = (ev.rawY - initialTouchY).toInt()
+                    if (!moved && (abs(deltaX) > touchSlop || abs(deltaY) > touchSlop)) {
                         moved = true
                     }
                     if (moved) {
-                        val dm = service.resources.displayMetrics
+                        val realW = getRealScreenWidth()
+                        val realH = getRealScreenHeight()
                         val w = p.width
                         val h = p.height
-                        val nx = (initialX + dx).coerceIn(0, (dm.widthPixels - w).coerceAtLeast(0))
-                        val ny = (initialY + dy).coerceIn(dp(16), (dm.heightPixels - h - dp(16)).coerceAtLeast(0))
+                        val nx = (initialX + deltaX).coerceIn(0, (realW - w).coerceAtLeast(0))
+                        val ny = (initialY + deltaY).coerceIn(dp(16), (realH - h - dp(16)).coerceAtLeast(0))
                         p.x = nx
                         p.y = ny
                         if (!isLayoutUpdatePending) {
@@ -319,15 +369,35 @@ class BubbleManager(
                                 }
                             }
                         }
+
+                        val bubbleCenterX = initialBubbleCenterX + (nx - initialX)
+                        val bubbleCenterY = initialBubbleCenterY + (ny - initialY)
+
+                        // Snooze gesture trigger: reveal and deflect joystick when dragging towards bottom
+                        if (bubbleCenterY > realH * 0.40f) {
+                            if (!isSnoozeTargetAttached) {
+                                showSnoozeTarget()
+                            }
+                            updateSnoozeTargetJoystick(bubbleCenterX, bubbleCenterY)
+                        } else {
+                            if (isSnoozeTargetAttached) {
+                                hideSnoozeTarget()
+                            }
+                        }
                     }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (moved) {
-                        val dm = service.resources.displayMetrics
+                    val wasOverSnooze = isOverSnoozeTarget
+                    hideSnoozeTarget(immediate = false)
+                    if (wasOverSnooze) {
+                        bubbleView?.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                        snoozeBubble()
+                    } else if (moved) {
+                        val realW = getRealScreenWidth()
                         val margin = dp(8)
-                        val mid = dm.widthPixels / 2
-                        val targetX = if (p.x + p.width / 2 < mid) margin else dm.widthPixels - p.width - margin
+                        val mid = realW / 2
+                        val targetX = if (p.x + p.width / 2 < mid) margin else realW - p.width - margin
                         val startX = p.x
                         if (startX != targetX) {
                             snapAnimator = ValueAnimator.ofInt(startX, targetX).apply {
@@ -348,6 +418,7 @@ class BubbleManager(
                     true
                 }
                 MotionEvent.ACTION_CANCEL -> {
+                    hideSnoozeTarget(immediate = true)
                     moved = false
                     isLayoutUpdatePending = false
                     true
@@ -366,7 +437,9 @@ class BubbleManager(
         params = WindowManager.LayoutParams(
             sizePx, sizePx,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -532,7 +605,7 @@ class BubbleManager(
         val file = recorder.start()
         if (file == null) { Toast.makeText(service, "Mic permission needed / failed to start", Toast.LENGTH_SHORT).show(); return }
         recordingStartTimeMs = System.currentTimeMillis()
-        initialAppPackage = service.rootInActiveWindow?.packageName?.toString() ?: "unknown"
+        initialAppPackage = service.getForegroundAppPackage() ?: "unknown"
         state = State.Recording
         expand()
         if (!isAttached) { try { wm.addView(bubbleView, params); isAttached = true } catch (_: Exception) {} }
@@ -602,7 +675,14 @@ class BubbleManager(
             return
         }
         val durationMs = (System.currentTimeMillis() - recordingStartTimeMs).coerceAtLeast(500L)
-        val targetPkg = if (initialAppPackage != "unknown") initialAppPackage else (service.rootInActiveWindow?.packageName?.toString() ?: "unknown")
+        val detectedPkg = service.getForegroundAppPackage()
+        val targetPkg = if (!HistoryRepository.isIgnoredPackage(detectedPkg)) {
+            detectedPkg!!
+        } else if (!HistoryRepository.isIgnoredPackage(initialAppPackage)) {
+            initialAppPackage
+        } else {
+            "unknown"
+        }
         val effectivePrompt = settings.getEffectiveSystemPrompt(targetPkg)
         val effectiveMode = settings.getEffectiveFormalityMode(targetPkg)
 
@@ -651,46 +731,369 @@ class BubbleManager(
                     when (val rf = groq.refine(baseUrl, apiKey, llama, raw, effectivePrompt, temperature, if (isTranslating) targetLang else null)) {
                         is GroqResult.Error -> {
                             val safeRaw = settings.applyFormalityStyling(Constants.sanitizeOutput(raw), effectiveMode)
-                            historyRepo.insertTranscript(safeRaw, targetPkg, durationMs)
-                            withContext(Dispatchers.Main) {
-                                val injected = TextInjector.inject(service, safeRaw)
-                                statusText?.text = if (isTranslating) {
-                                    if (injected) "Raw Pasted ✓" else "Raw Copied"
-                                } else {
-                                    if (injected) "Pasted ✓" else "Copied"
-                                }
-                                tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
-                                tickLoader?.visibility = View.GONE
-                                handler.postDelayed({
-                                    state = State.Idle
-                                    service.stopListeningNotification()
-                                    hide()
-                                }, 800)
-                            }
+                            handleResultInjection(safeRaw, targetPkg, durationMs, isTranslating, isErrorFallback = true)
                         }
                         is GroqResult.Success -> {
                             val clean = settings.applyFormalityStyling(rf.data, effectiveMode)
-                            historyRepo.insertTranscript(clean, targetPkg, durationMs)
-                            withContext(Dispatchers.Main) {
-                                val injected = TextInjector.inject(service, clean)
-                                statusText?.text = if (isTranslating) {
-                                    if (injected) "Translated ✓" else "Translated (Copied)"
-                                } else {
-                                    if (injected) "Pasted ✓" else "Copied"
-                                }
-                                tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
-                                tickLoader?.visibility = View.GONE
-                                handler.postDelayed({
-                                    state = State.Idle
-                                    service.stopListeningNotification()
-                                    hide()
-                                }, 800)
-                            }
+                            handleResultInjection(clean, targetPkg, durationMs, isTranslating, isErrorFallback = false)
                         }
                     }
                 }
             }
             file.delete()
         }
+    }
+
+    private suspend fun handleResultInjection(
+        text: String,
+        targetPkg: String,
+        durationMs: Long,
+        isTranslating: Boolean,
+        isErrorFallback: Boolean
+    ) = withContext(Dispatchers.Main) {
+        val injection = TextInjector.inject(service, text)
+        val finalPkg = injection.targetPackage?.takeIf { !HistoryRepository.isIgnoredPackage(it) } ?: targetPkg
+        historyRepo.insertTranscript(text, finalPkg, durationMs)
+        val injected = injection.success
+        statusText?.text = if (isTranslating) {
+            if (isErrorFallback) (if (injected) "Raw Pasted ✓" else "Raw Copied")
+            else (if (injected) "Translated ✓" else "Translated (Copied)")
+        } else {
+            if (injected) "Pasted ✓" else "Copied"
+        }
+        tickIcon?.apply { visibility = View.VISIBLE; alpha = 1f }
+        tickLoader?.visibility = View.GONE
+        handler.postDelayed({
+            state = State.Idle
+            service.stopListeningNotification()
+            hide()
+        }, 800)
+    }
+
+    fun snoozeBubble(minutes: Int = settings.snoozeDurationMinutes) {
+        settings.snooze(minutes)
+        hide()
+        showSnoozeToast(minutes)
+        service.onBubbleSnoozed()
+    }
+
+    private fun createSnoozeTargetView() {
+        val ctx = service
+        val targetSize = dp(64)
+        val containerSize = dp(88)
+
+        val outer = FrameLayout(ctx).apply {
+            layoutParams = FrameLayout.LayoutParams(targetSize, targetSize, Gravity.CENTER)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0x33101014.toInt())
+                setStroke(dp(1.5f).coerceAtLeast(1), 0x66FFFFFF.toInt())
+            }
+        }
+
+        val puckSize = dp(44)
+        val puck = FrameLayout(ctx).apply {
+            layoutParams = FrameLayout.LayoutParams(puckSize, puckSize, Gravity.CENTER)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xFF16171D.toInt())
+                setStroke(dp(1), 0x33FFFFFF.toInt())
+            }
+        }
+
+        val icon = ImageView(ctx).apply {
+            setImageResource(R.drawable.ic_snooze)
+            imageTintList = android.content.res.ColorStateList.valueOf(0xFFFFFFFF.toInt())
+            layoutParams = FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER)
+        }
+        puck.addView(icon)
+        outer.addView(puck)
+
+        val root = FrameLayout(ctx).apply {
+            layoutParams = FrameLayout.LayoutParams(containerSize, containerSize)
+            alpha = 0f
+            scaleX = 0.85f
+            scaleY = 0.85f
+            addView(outer)
+        }
+
+        snoozeOuterRing = outer
+        snoozeInnerPuck = puck
+        snoozeTargetView = root
+
+        snoozeParams = WindowManager.LayoutParams(
+            containerSize, containerSize,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            y = dp(76)
+        }
+    }
+
+    private fun showSnoozeTarget() {
+        if (snoozeTargetView == null) {
+            createSnoozeTargetView()
+        }
+        val target = snoozeTargetView ?: return
+        val p = snoozeParams ?: return
+
+        isOverSnoozeTarget = false
+        target.scaleX = 0.85f
+        target.scaleY = 0.85f
+        target.alpha = 0f
+
+        if (!isSnoozeTargetAttached) {
+            try {
+                wm.addView(target, p)
+                isSnoozeTargetAttached = true
+            } catch (_: Exception) {}
+        }
+        target.animate()
+            .alpha(1f)
+            .scaleX(1.0f)
+            .scaleY(1.0f)
+            .setDuration(180)
+            .start()
+    }
+
+    private fun updateSnoozeTargetJoystick(bubbleCenterX: Float, bubbleCenterY: Float) {
+        val containerSize = dp(88)
+        val realH = getRealScreenHeight()
+        val realW = getRealScreenWidth()
+
+        var snoozeCenterX = realW / 2f
+        var snoozeCenterY = realH - dp(76) - (containerSize / 2f)
+
+        snoozeTargetView?.let { target ->
+            val loc = IntArray(2)
+            target.getLocationOnScreen(loc)
+            if (loc[0] > 0 || loc[1] > 0) {
+                val tw = if (target.width > 0) target.width else containerSize
+                val th = if (target.height > 0) target.height else containerSize
+                snoozeCenterX = loc[0] + tw / 2f
+                snoozeCenterY = loc[1] + th / 2f
+            }
+        }
+
+        val dx = bubbleCenterX - snoozeCenterX
+        val dy = bubbleCenterY - snoozeCenterY
+        val distance = Math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+
+        // Joystick throw deflection towards bubble
+        val maxThrow = dp(14).toFloat()
+        if (distance > 0f) {
+            val pull = (distance / dp(180)).coerceIn(0f, 1f) * maxThrow
+            val offsetX = (dx / distance) * pull
+            val offsetY = (dy / distance) * pull
+            snoozeInnerPuck?.translationX = offsetX
+            snoozeInnerPuck?.translationY = offsetY
+        } else {
+            snoozeInnerPuck?.translationX = 0f
+            snoozeInnerPuck?.translationY = 0f
+        }
+
+        // Hit zone: turns red ONLY when bubble icon is directly on top of the circle snooze bubble
+        val hitRadius = dp(26).toFloat()
+        val isHit = distance <= hitRadius
+        if (isHit != isOverSnoozeTarget) {
+            isOverSnoozeTarget = isHit
+            if (isHit) {
+                snoozeOuterRing?.animate()
+                    ?.scaleX(1.26f)
+                    ?.scaleY(1.26f)
+                    ?.setDuration(120)
+                    ?.start()
+                (snoozeOuterRing?.background as? GradientDrawable)?.apply {
+                    setStroke(dp(2), 0xFFFF2E2E.toInt())
+                    setColor(0x55FF2E2E.toInt())
+                }
+                bubbleView?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            } else {
+                snoozeOuterRing?.animate()
+                    ?.scaleX(1.0f)
+                    ?.scaleY(1.0f)
+                    ?.setDuration(120)
+                    ?.start()
+                (snoozeOuterRing?.background as? GradientDrawable)?.apply {
+                    setStroke(dp(1.5f).coerceAtLeast(1), 0x66FFFFFF.toInt())
+                    setColor(0x33101014.toInt())
+                }
+            }
+        }
+    }
+
+    private fun hideSnoozeTarget(immediate: Boolean = false) {
+        val target = snoozeTargetView ?: return
+        isOverSnoozeTarget = false
+        snoozeInnerPuck?.translationX = 0f
+        snoozeInnerPuck?.translationY = 0f
+        (snoozeOuterRing?.background as? GradientDrawable)?.apply {
+            setStroke(dp(1.5f).coerceAtLeast(1), 0x66FFFFFF.toInt())
+            setColor(0x33101014.toInt())
+        }
+        snoozeOuterRing?.scaleX = 1.0f
+        snoozeOuterRing?.scaleY = 1.0f
+
+        if (!isSnoozeTargetAttached) return
+
+        if (immediate) {
+            try { wm.removeView(target) } catch (_: Exception) {}
+            isSnoozeTargetAttached = false
+        } else {
+            target.animate()
+                .alpha(0f)
+                .scaleX(0.85f)
+                .scaleY(0.85f)
+                .setDuration(150)
+                .withEndAction {
+                    if (isSnoozeTargetAttached) {
+                        try { wm.removeView(target) } catch (_: Exception) {}
+                        isSnoozeTargetAttached = false
+                    }
+                }
+                .start()
+        }
+    }
+
+    private fun buildToastCard(title: String, subtitle: String): View {
+        val ctx = service
+        val card = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(14).toFloat()
+                setColor(0xFF16171D.toInt())
+                setStroke(dp(1), 0xFF2A2D3A.toInt())
+            }
+            elevation = 12f
+            setPadding(dp(12), dp(10), dp(16), dp(10))
+        }
+
+        // Circular badge with 4 vertical waveform bars matching 4.png
+        val badge = FrameLayout(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xFF0C0D11.toInt())
+                setStroke(dp(1), 0xFF262833.toInt())
+            }
+        }
+
+        val bars = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER)
+        }
+        val barHeights = listOf(7, 13, 17, 9)
+        barHeights.forEach { h ->
+            val bar = View(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(2), dp(h)).apply {
+                    setMargins(dp(1), 0, dp(1), 0)
+                }
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = dp(1).toFloat()
+                    setColor(0xFFFFFFFF.toInt())
+                }
+            }
+            bars.addView(bar)
+        }
+        badge.addView(bars)
+        card.addView(badge)
+
+        val spacer = View(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(10), dp(1))
+        }
+        card.addView(spacer)
+
+        val textCol = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val titleView = TextView(ctx).apply {
+            text = title
+            textSize = 12.5f
+            setTextColor(0xFFFFFFFF.toInt())
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            maxLines = 1
+        }
+
+        val subView = TextView(ctx).apply {
+            text = subtitle
+            textSize = 10.5f
+            setTextColor(0xFF8E95A2.toInt())
+            typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
+            maxLines = 1
+        }
+
+        textCol.addView(titleView)
+        textCol.addView(subView)
+        card.addView(textCol)
+
+        return card
+    }
+
+    fun showToast(title: String, subtitle: String, durationMs: Long = 3000L) {
+        toastDismissRunnable?.let { handler.removeCallbacks(it) }
+        toastView?.let { try { wm.removeView(it) } catch (_: Exception) {} }
+
+        val toast = buildToastCard(title, subtitle)
+        toastView = toast
+
+        val p = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            y = dp(48)
+        }
+
+        try {
+            wm.addView(toast, p)
+        } catch (_: Exception) { return }
+
+        toast.alpha = 0f
+        toast.translationY = dp(16).toFloat()
+        toast.animate()
+            .alpha(1f)
+            .translationY(0f)
+            .setDuration(220)
+            .start()
+
+        val dismiss = Runnable {
+            toast.animate()
+                .alpha(0f)
+                .translationY(dp(16).toFloat())
+                .setDuration(240)
+                .withEndAction {
+                    try { wm.removeView(toast) } catch (_: Exception) {}
+                    if (toastView == toast) toastView = null
+                }
+                .start()
+        }
+        toastDismissRunnable = dismiss
+        handler.postDelayed(dismiss, durationMs)
+    }
+
+    fun showSnoozeToast(durationMinutes: Int) {
+        val durationFormatted = SettingsRepository.formatSnoozeDuration(durationMinutes)
+        showToast("Wispr Flow is snoozed for $durationFormatted.", "Shake your phone to bring it back", 3500L)
+    }
+
+    fun showUnsnoozeToast() {
+        showToast("Open Wispr unsnoozed", "Floating dictation bubble restored", 2500L)
     }
 }

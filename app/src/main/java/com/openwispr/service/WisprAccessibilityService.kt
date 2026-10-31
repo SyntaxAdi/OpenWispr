@@ -12,12 +12,20 @@ import androidx.core.app.NotificationCompat
 import com.openwispr.R
 import com.openwispr.audio.AudioRecorder
 import com.openwispr.data.GroqRepository
+import com.openwispr.data.HistoryRepository
 import com.openwispr.data.SettingsRepository
+import com.openwispr.util.TextInjector
 
 class WisprAccessibilityService : AccessibilityService() {
 
     private lateinit var settings: SettingsRepository
     private lateinit var bubble: BubbleManager
+    private val shakeDetector = com.openwispr.util.ShakeDetector {
+        onShakeUnsnooze()
+    }
+
+    var lastForegroundPackage: String? = null
+        private set
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -30,7 +38,22 @@ class WisprAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
+        val pkg = event.packageName?.toString()
+        if (!HistoryRepository.isIgnoredPackage(pkg)) {
+            lastForegroundPackage = pkg
+        }
         if (bubble.isRecording()) return // locked while recording: never hide or interrupt
+
+        if (settings.isSnoozed()) {
+            if (!shakeDetector.isStarted()) {
+                shakeDetector.start(this)
+            }
+            return
+        } else {
+            if (shakeDetector.isStarted()) {
+                shakeDetector.stop()
+            }
+        }
 
         val ime = getImeBounds()
         if (ime != null) {
@@ -42,9 +65,58 @@ class WisprAccessibilityService : AccessibilityService() {
         }
     }
 
+    fun onBubbleSnoozed() {
+        if (!shakeDetector.isStarted()) {
+            shakeDetector.start(this)
+        }
+    }
+
+    fun onShakeUnsnooze() {
+        if (!settings.isSnoozed()) return
+        settings.unsnooze()
+        shakeDetector.stop()
+
+        try {
+            val vibrator = androidx.core.content.ContextCompat.getSystemService(this, android.os.Vibrator::class.java)
+            if (Build.VERSION.SDK_INT >= 26) {
+                vibrator?.vibrate(android.os.VibrationEffect.createOneShot(120, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(120)
+            }
+        } catch (_: Exception) {}
+
+        bubble.showUnsnoozeToast()
+
+        val ime = getImeBounds()
+        if (ime != null) {
+            val screenHeight = resources.displayMetrics.heightPixels
+            val uncovered = ime.top.coerceIn(0, screenHeight)
+            bubble.onKeyboardOpened(uncovered)
+        }
+    }
+
+    fun getForegroundAppPackage(): String? {
+        val targetNodePkg = TextInjector.findTargetNode(this)?.packageName?.toString()
+        if (!HistoryRepository.isIgnoredPackage(targetNodePkg)) return targetNodePkg
+
+        val windowPkg = try {
+            windows?.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }?.root?.packageName?.toString()
+        } catch (_: Exception) { null }
+        if (!HistoryRepository.isIgnoredPackage(windowPkg)) return windowPkg
+
+        if (!HistoryRepository.isIgnoredPackage(lastForegroundPackage)) return lastForegroundPackage
+
+        val rootPkg = try { rootInActiveWindow?.packageName?.toString() } catch (_: Exception) { null }
+        if (!HistoryRepository.isIgnoredPackage(rootPkg)) return rootPkg
+
+        return null
+    }
+
     override fun onInterrupt() {}
 
     override fun onDestroy() {
+        shakeDetector.stop()
         bubble.destroy()
         super.onDestroy()
     }

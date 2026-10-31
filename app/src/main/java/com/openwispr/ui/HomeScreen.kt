@@ -1,7 +1,6 @@
 package com.openwispr.ui
 
 import android.content.Context
-import android.os.Build
 import android.widget.Toast
 import com.openwispr.util.TextInjector
 import androidx.compose.foundation.Image
@@ -40,21 +39,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.async
-import androidx.compose.foundation.Canvas
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import java.text.NumberFormat
-import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
-import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
 
 // Deep OLED Pitch Black Palette
 private val ColorDarkBg = Color(0xFF000000)
@@ -66,7 +56,6 @@ private val ColorGreenAccent = Color(0xFF00E676)
 private val ColorMuted = Color(0xFF8E95A2)
 private val ColorSubtle = Color(0xFF555B66)
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     historyRepo: HistoryRepository,
@@ -82,10 +71,6 @@ fun HomeScreen(
 
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val navBarPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-
-    val pullRefreshState = rememberPullToRefreshState(
-        positionalThreshold = statusBarPadding + 48.dp
-    )
 
     suspend fun performRefresh() {
         runCatching {
@@ -103,30 +88,22 @@ fun HomeScreen(
         }
     }
 
-    val spinRotation = remember { Animatable(0f) }
-
-    if (pullRefreshState.isRefreshing) {
-        LaunchedEffect(true) {
-            spinRotation.snapTo(0f)
-            val refreshDeferred = async(Dispatchers.IO) {
-                val newStats = historyRepo.getHomeStats()
-                val newRecent = historyRepo.getRecentTranscripts(limit = 2)
-                Pair(newStats, newRecent)
+    var isAppInFocus by remember { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> isAppInFocus = true
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> isAppInFocus = false
+                else -> {}
             }
-            try {
-                spinRotation.animateTo(
-                    targetValue = 1080f,
-                    animationSpec = tween(
-                        durationMillis = 1350,
-                        easing = FastOutSlowInEasing
-                    )
-                )
-                val (newStats, newRecent) = refreshDeferred.await()
-                stats = newStats
-                transcripts = newRecent
-            } finally {
-                pullRefreshState.endRefresh()
+            if (event == Lifecycle.Event.ON_RESUME) {
+                scope.launch { performRefresh() }
             }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
@@ -134,16 +111,12 @@ fun HomeScreen(
         modifier = modifier
             .fillMaxSize()
             .background(ColorDarkBg)
-            .nestedScroll(pullRefreshState.nestedScrollConnection)
     ) {
 
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 12.dp)
-                .graphicsLayer {
-                    translationY = pullRefreshState.verticalOffset
-                },
+                .padding(horizontal = 12.dp),
             contentPadding = PaddingValues(
                 top = statusBarPadding + 10.dp,
                 bottom = navBarPadding + 24.dp
@@ -159,7 +132,7 @@ fun HomeScreen(
 
             // 2. Card 01: TOTAL WORDS SPOKEN (Hero Card with 24h Peak Activity)
             item(key = "card_words") {
-                CardTotalWordsSpoken(stats = stats)
+                CardTotalWordsSpoken(stats = stats, isAppInFocus = isAppInFocus)
             }
 
             // 3. Row of 2 Cards: WEEK STREAK & APPS TRACKED (Twin Heights)
@@ -191,7 +164,7 @@ fun HomeScreen(
                         CardSpeakingSpeed(stats = stats)
                     }
                     Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                        CardTotalUsage(stats = stats)
+                        CardTotalUsage(stats = stats, isAppInFocus = isAppInFocus)
                     }
                 }
             }
@@ -215,59 +188,6 @@ fun HomeScreen(
                 )
             }
         }
-
-        PullToRefreshContainer(
-            state = pullRefreshState,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .graphicsLayer {
-                    alpha = if (pullRefreshState.verticalOffset > 0.5f || pullRefreshState.isRefreshing) 1f else 0f
-                },
-            containerColor = ColorCardElevated,
-            contentColor = ColorRedAccent,
-            indicator = { state ->
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (state.isRefreshing) {
-                        Canvas(modifier = Modifier.size(18.dp)) {
-                            val strokeWidth = 2.5.dp.toPx()
-                            val diameter = size.minDimension - strokeWidth
-                            val topLeft = Offset(strokeWidth / 2f, strokeWidth / 2f)
-                            val arcSize = Size(diameter, diameter)
-
-                            // Subtle red background track ring
-                            drawArc(
-                                color = Color(0x22FF2E2E),
-                                startAngle = 0f,
-                                sweepAngle = 360f,
-                                useCenter = false,
-                                topLeft = topLeft,
-                                size = arcSize,
-                                style = Stroke(width = strokeWidth)
-                            )
-
-                            // Rotating active red arc with rounded ends
-                            drawArc(
-                                color = ColorRedAccent,
-                                startAngle = spinRotation.value,
-                                sweepAngle = 270f,
-                                useCenter = false,
-                                topLeft = topLeft,
-                                size = arcSize,
-                                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-                            )
-                        }
-                    } else {
-                        PullToRefreshDefaults.Indicator(
-                            state = state,
-                            color = ColorRedAccent
-                        )
-                    }
-                }
-            }
-        )
     }
 }
 
@@ -363,7 +283,41 @@ private fun TopBarHeader(
 }
 
 @Composable
-private fun CardTotalWordsSpoken(stats: HomeStats) {
+private fun CardTotalWordsSpoken(stats: HomeStats, isAppInFocus: Boolean) {
+    val targetWords = stats.totalWords
+    val animatedWords = remember { Animatable(targetWords.toFloat()) }
+    val livePulse = remember { Animatable(1f) }
+    var isInitialLoad by remember { mutableStateOf(true) }
+
+    LaunchedEffect(targetWords, isAppInFocus) {
+        val current = animatedWords.value
+        val target = targetWords.toFloat()
+        if (isInitialLoad) {
+            if (target > 0f) {
+                animatedWords.snapTo(target)
+                isInitialLoad = false
+            }
+        } else if (target > current) {
+            if (isAppInFocus) {
+                launch {
+                    livePulse.snapTo(1.7f)
+                    livePulse.animateTo(1f, tween(320, easing = FastOutSlowInEasing))
+                }
+                animatedWords.animateTo(
+                    targetValue = target,
+                    animationSpec = tween(
+                        durationMillis = 320,
+                        easing = FastOutSlowInEasing
+                    )
+                )
+            }
+        } else {
+            animatedWords.snapTo(target)
+        }
+    }
+
+    val displayWords = animatedWords.value.toLong()
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -390,7 +344,15 @@ private fun CardTotalWordsSpoken(stats: HomeStats) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    Box(modifier = Modifier.size(5.dp).background(ColorRedAccent, CircleShape))
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .graphicsLayer {
+                                scaleX = livePulse.value
+                                scaleY = livePulse.value
+                            }
+                            .background(ColorRedAccent, CircleShape)
+                    )
                     Text(
                         text = "LIVE",
                         fontSize = 9.sp,
@@ -410,7 +372,7 @@ private fun CardTotalWordsSpoken(stats: HomeStats) {
             ) {
                 Column {
                     DotMatrixText(
-                        text = NumberFormat.getNumberInstance(Locale.US).format(stats.totalWords),
+                        text = NumberFormat.getNumberInstance(Locale.US).format(displayWords),
                         dotSize = 3.8.dp,
                         dotSpacing = 1.2.dp,
                         color = Color.White
@@ -775,7 +737,44 @@ private fun CardSpeakingSpeed(stats: HomeStats) {
 }
 
 @Composable
-private fun CardTotalUsage(stats: HomeStats) {
+private fun CardTotalUsage(stats: HomeStats, isAppInFocus: Boolean) {
+    val targetDurationMs = stats.totalDurationMs
+    val animatedDurationMs = remember { Animatable(targetDurationMs.toFloat()) }
+    val clockPulse = remember { Animatable(1f) }
+    var isInitialLoad by remember { mutableStateOf(true) }
+
+    LaunchedEffect(targetDurationMs, isAppInFocus) {
+        val current = animatedDurationMs.value
+        val target = targetDurationMs.toFloat()
+        if (isInitialLoad) {
+            if (target > 0f) {
+                animatedDurationMs.snapTo(target)
+                isInitialLoad = false
+            }
+        } else if (target > current) {
+            if (isAppInFocus) {
+                launch {
+                    clockPulse.snapTo(1.4f)
+                    clockPulse.animateTo(1f, tween(320, easing = FastOutSlowInEasing))
+                }
+                animatedDurationMs.animateTo(
+                    targetValue = target,
+                    animationSpec = tween(
+                        durationMillis = 320,
+                        easing = FastOutSlowInEasing
+                    )
+                )
+            }
+        } else {
+            animatedDurationMs.snapTo(target)
+        }
+    }
+
+    val displayDurationMs = animatedDurationMs.value.toLong()
+    val formattedUsage = remember(displayDurationMs) {
+        HistoryRepository.formatUsageDuration(displayDurationMs)
+    }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -797,8 +796,13 @@ private fun CardTotalUsage(stats: HomeStats) {
                 Icon(
                     painter = painterResource(R.drawable.ic_clock),
                     contentDescription = null,
-                    tint = ColorMuted,
-                    modifier = Modifier.size(10.dp)
+                    tint = if (clockPulse.value > 1.05f) ColorRedAccent else ColorMuted,
+                    modifier = Modifier
+                        .size(10.dp)
+                        .graphicsLayer {
+                            scaleX = clockPulse.value
+                            scaleY = clockPulse.value
+                        }
                 )
                 Text(
                     text = "TOTAL USAGE",
@@ -817,7 +821,7 @@ private fun CardTotalUsage(stats: HomeStats) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 DotMatrixUsageDisplay(
-                    formattedText = stats.formattedTotalUsage,
+                    formattedText = formattedUsage,
                     dotSize = 2.0.dp,
                     dotSpacing = 0.7.dp,
                     charSpacing = 0.9.dp

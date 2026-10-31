@@ -567,6 +567,117 @@ class SettingsAndSecurityTest {
         assertTrue("ic_chevron_right must be styled with #FF2E2E",
             chevronContent.contains("#FF2E2E"))
     }
+
+    @Test
+    fun testSnoozeTimingConstantsAndFormatting() {
+        assertEquals(10, Constants.DEFAULT_SNOOZE_MINUTES)
+        assertEquals(1, Constants.MIN_SNOOZE_MINUTES)
+        assertEquals(1440, Constants.MAX_SNOOZE_MINUTES)
+        assertEquals(listOf(10, 20, 30, 60), Constants.PRESET_SNOOZE_MINUTES)
+
+        assertEquals("10 min", SettingsRepository.formatSnoozeDuration(10))
+        assertEquals("20 min", SettingsRepository.formatSnoozeDuration(20))
+        assertEquals("30 min", SettingsRepository.formatSnoozeDuration(30))
+        assertEquals("1 hour", SettingsRepository.formatSnoozeDuration(60))
+        assertEquals("1h 15m", SettingsRepository.formatSnoozeDuration(75))
+        assertEquals("2 hours", SettingsRepository.formatSnoozeDuration(120))
+        assertEquals("24 hours", SettingsRepository.formatSnoozeDuration(1440))
+    }
+
+    @Test
+    fun testPonytailUltraCleanups() {
+        val bubbleFile = java.io.File("src/main/java/com/openwispr/service/BubbleManager.kt").let {
+            if (it.exists()) it else java.io.File("app/src/main/java/com/openwispr/service/BubbleManager.kt")
+        }
+        val bubbleContent = bubbleFile.readText()
+        assertTrue("BubbleManager must unify toasts into showToast", bubbleContent.contains("fun showToast("))
+        assertTrue("BubbleManager showSnoozeToast must delegate to showToast", bubbleContent.contains("showToast(\"Wispr Flow is snoozed for"))
+
+        val dbFile = java.io.File("src/main/java/com/openwispr/data/HistoryDatabaseHelper.kt").let {
+            if (it.exists()) it else java.io.File("app/src/main/java/com/openwispr/data/HistoryDatabaseHelper.kt")
+        }
+        assertTrue("HistoryDatabaseHelper must not contain onOpen SQL query", !dbFile.readText().contains("override fun onOpen"))
+
+        val shakeFile = java.io.File("src/main/java/com/openwispr/util/ShakeDetector.kt").let {
+            if (it.exists()) it else java.io.File("app/src/main/java/com/openwispr/util/ShakeDetector.kt")
+        }
+        assertTrue("ShakeDetector must not contain unused accelerometer field", !shakeFile.readText().contains("accelerometer"))
+
+        val settingsRepoFile = java.io.File("src/main/java/com/openwispr/data/SettingsRepository.kt").let {
+            if (it.exists()) it else java.io.File("app/src/main/java/com/openwispr/data/SettingsRepository.kt")
+        }
+        assertTrue("SettingsRepository must not contain dead getRemainingSnoozeMillis", !settingsRepoFile.readText().contains("getRemainingSnoozeMillis"))
+
+        val settingsScreenFile = java.io.File("src/main/java/com/openwispr/ui/SettingsScreen.kt").let {
+            if (it.exists()) it else java.io.File("app/src/main/java/com/openwispr/ui/SettingsScreen.kt")
+        }
+        val settingsScreenContent = settingsScreenFile.readText()
+        assertTrue("SettingsScreen must not manually mutate customHours in preset click", !settingsScreenContent.contains("customHours = preset / 60"))
+    }
+
+    @Test
+    fun testSnoozeTargetPreciseIconAlignment() {
+        val bubbleFile = java.io.File("src/main/java/com/openwispr/service/BubbleManager.kt").let {
+            if (it.exists()) it else java.io.File("app/src/main/java/com/openwispr/service/BubbleManager.kt")
+        }
+        val content = bubbleFile.readText()
+        assertTrue("BubbleManager must compute real screen dimensions", content.contains("fun getRealScreenHeight(): Int"))
+        assertTrue("BubbleManager must use real screen width", content.contains("fun getRealScreenWidth(): Int"))
+        assertTrue("BubbleManager must track on-screen location of snooze target", content.contains("target.getLocationOnScreen(loc)"))
+        assertTrue("BubbleManager must use bubbleCenterX from initialBubbleCenterX", content.contains("val bubbleCenterX = initialBubbleCenterX + (nx - initialX)"))
+        assertTrue("BubbleManager must pass FLAG_LAYOUT_NO_LIMITS to bubble params", content.contains("WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS"))
+        assertTrue("BubbleManager snoozeParams must set FLAG_NOT_TOUCHABLE for security",
+            content.contains("WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or\n                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS"))
+        assertTrue("BubbleManager showToast must set FLAG_NOT_TOUCHABLE to prevent touch blocking",
+            content.contains("WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or\n                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS"))
+
+        val serviceFile = java.io.File("src/main/java/com/openwispr/service/WisprAccessibilityService.kt").let {
+            if (it.exists()) it else java.io.File("app/src/main/java/com/openwispr/service/WisprAccessibilityService.kt")
+        }
+        val serviceContent = serviceFile.readText()
+        assertTrue("WisprAccessibilityService must not contain deprecated VIBRATOR_SERVICE string lookup",
+            !serviceContent.contains("Context.VIBRATOR_SERVICE"))
+        assertTrue("WisprAccessibilityService must use ContextCompat.getSystemService with Vibrator class",
+            serviceContent.contains("ContextCompat.getSystemService(this, android.os.Vibrator::class.java)"))
+
+        val homeFile = java.io.File("src/main/java/com/openwispr/ui/HomeScreen.kt").let {
+            if (it.exists()) it else java.io.File("app/src/main/java/com/openwispr/ui/HomeScreen.kt")
+        }
+        val homeContent = homeFile.readText()
+        assertTrue("HomeScreen must not contain dead imports",
+            !homeContent.contains("import kotlinx.coroutines.async") &&
+            !homeContent.contains("import java.text.SimpleDateFormat") &&
+            !homeContent.contains("import android.os.Build"))
+    }
+
+    @Test
+    fun testSnoozeAndDismissalRedesignVisualComponents() {
+        val settingsScreenFile = java.io.File("src/main/java/com/openwispr/ui/SettingsScreen.kt").let {
+            if (it.exists()) it else java.io.File("app/src/main/java/com/openwispr/ui/SettingsScreen.kt")
+        }
+        val content = settingsScreenFile.readText()
+        assertTrue("SettingsScreen must contain SnoozeTimeoutGlyphMatrix", content.contains("fun SnoozeTimeoutGlyphMatrix"))
+        assertTrue("SettingsScreen must contain SnoozeClockDialIcon", content.contains("fun SnoozeClockDialIcon"))
+        assertTrue("SettingsScreen must not contain NothingDottedSlider", !content.contains("fun NothingDottedSlider"))
+        assertTrue("SettingsScreen must use Animatable for fluid snooze countdown", content.contains("Animatable(initialFraction)"))
+        assertTrue("SettingsScreen must contain SET DURATION pill button", content.contains("\"SET DURATION\""))
+        assertTrue("SettingsScreen must contain circular back button in header", content.contains("CircleShape") && content.contains("\"←\""))
+        assertTrue("SettingsScreen must contain SnoozeWheelDrum", content.contains("fun SnoozeWheelDrum"))
+        assertTrue("SettingsScreen must highlight selected preset with red accent background", content.contains("Color(0x22D71921)"))
+        assertTrue("SettingsScreen must not contain GESTURE & HARDWARE TELEMETRY card", !content.contains("GESTURE & HARDWARE TELEMETRY"))
+        assertTrue("SettingsScreen must contain SnoozeActiveProgressTimer", content.contains("fun SnoozeActiveProgressTimer"))
+        assertTrue("SettingsScreen must equalize preset box heights to 96dp", content.contains(".height(96.dp)"))
+        assertTrue("SettingsScreen must set custom duration subtitle", content.contains("Set snooze time from 1 minute to 24 hours"))
+        assertTrue("SettingsScreen must level capsule height to 148dp", content.contains(".height(148.dp)"))
+        assertTrue("SettingsScreen must contain CUSTOM TIMEOUT trigger button", content.contains("\"CUSTOM TIMEOUT\""))
+        assertTrue("SettingsScreen must manage isCustomExpanded state", content.contains("isCustomExpanded"))
+        assertTrue("SettingsScreen must contain top-right UNSNOOZE action button", content.contains("\"UNSNOOZE\""))
+        assertTrue("SettingsScreen must not contain awkward UNSNOOZE NOW button under timer", !content.contains("\"UNSNOOZE NOW\""))
+        assertTrue("SettingsScreen must contain STATUS: ACTIVE indicator", content.contains("STATUS: ACTIVE"))
+        assertTrue("SettingsScreen must animate SnoozeTimeoutGlyphMatrix", content.contains("fun SnoozeTimeoutGlyphMatrix") && content.contains("isSnoozed: Boolean"))
+        assertTrue("SettingsScreen must not provide onReset for SnoozeSettings", !content.contains("snoozeMinutes = Constants.DEFAULT_SNOOZE_MINUTES"))
+    }
 }
+
 
 

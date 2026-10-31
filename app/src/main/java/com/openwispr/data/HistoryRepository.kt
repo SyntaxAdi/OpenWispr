@@ -42,8 +42,7 @@ data class HomeStats(
 class HistoryRepository(private val context: Context) {
     private val dbHelper = HistoryDatabaseHelper(context.applicationContext)
 
-    private val _dataUpdates = MutableSharedFlow<Unit>(replay = 1, extraBufferCapacity = 1)
-    val dataUpdates: SharedFlow<Unit> = _dataUpdates.asSharedFlow()
+    val dataUpdates: SharedFlow<Unit> get() = Companion.dataUpdates
 
     suspend fun insertTranscript(text: String, appPackage: String, durationMs: Long): Long = withContext(Dispatchers.IO) {
         val words = countWords(text)
@@ -57,7 +56,7 @@ class HistoryRepository(private val context: Context) {
         val db = dbHelper.writableDatabase
         val id = db.insert(HistoryDatabaseHelper.TABLE_TRANSCRIPTS, null, cv)
         if (id != -1L) {
-            _dataUpdates.tryEmit(Unit)
+            notifyDataUpdated()
         }
         id
     }
@@ -71,7 +70,7 @@ class HistoryRepository(private val context: Context) {
         )
         val success = rows > 0
         if (success) {
-            _dataUpdates.tryEmit(Unit)
+            notifyDataUpdated()
         }
         success
     }
@@ -79,7 +78,7 @@ class HistoryRepository(private val context: Context) {
     suspend fun clearAllTranscripts(): Boolean = withContext(Dispatchers.IO) {
         val db = dbHelper.writableDatabase
         val rows = db.delete(HistoryDatabaseHelper.TABLE_TRANSCRIPTS, null, null)
-        _dataUpdates.tryEmit(Unit)
+        notifyDataUpdated()
         rows >= 0
     }
 
@@ -174,37 +173,38 @@ class HistoryRepository(private val context: Context) {
         }
 
         // 2. Active apps count and most used app by word count
-        var activeAppsCount = 0
-        var mostUsedAppPackage: String? = null
-        var mostUsedAppWords = 0L
-
+        val appStatsList = mutableListOf<AppStat>()
         val cursorApps = db.rawQuery(
             """
-            SELECT ${HistoryDatabaseHelper.COL_APP_PACKAGE}, SUM(${HistoryDatabaseHelper.COL_WORD_COUNT}) as total_app_words
+            SELECT ${HistoryDatabaseHelper.COL_APP_PACKAGE},
+                   SUM(${HistoryDatabaseHelper.COL_WORD_COUNT}) as total_app_words,
+                   COUNT(*) as transcript_count
             FROM ${HistoryDatabaseHelper.TABLE_TRANSCRIPTS}
             WHERE ${HistoryDatabaseHelper.COL_APP_PACKAGE} IS NOT NULL AND ${HistoryDatabaseHelper.COL_APP_PACKAGE} != ''
             GROUP BY ${HistoryDatabaseHelper.COL_APP_PACKAGE}
-            ORDER BY total_app_words DESC
             """.trimIndent(),
             null
         )
         cursorApps.use { c ->
             val pkgIdx = c.getColumnIndex(HistoryDatabaseHelper.COL_APP_PACKAGE)
             val sumIdx = c.getColumnIndex("total_app_words")
+            val countIdx = c.getColumnIndex("transcript_count")
             while (c.moveToNext()) {
-                activeAppsCount++
-                if (mostUsedAppPackage == null && pkgIdx >= 0 && sumIdx >= 0) {
-                    mostUsedAppPackage = c.getString(pkgIdx)
-                    mostUsedAppWords = c.getLong(sumIdx)
+                if (pkgIdx >= 0 && sumIdx >= 0 && countIdx >= 0) {
+                    val pkg = c.getString(pkgIdx)
+                    val words = c.getLong(sumIdx)
+                    val count = c.getInt(countIdx)
+                    if (!isIgnoredPackage(pkg)) {
+                        appStatsList.add(AppStat(packageName = pkg, words = words, count = count))
+                    }
                 }
             }
         }
 
-        val mostUsedPercentage = if (totalWords > 0 && mostUsedAppWords > 0) {
-            ((mostUsedAppWords.toDouble() / totalWords.toDouble()) * 100).toInt().coerceIn(0, 100)
-        } else {
-            0
-        }
+        val mostUsedStats = calculateMostUsedAppStats(appStatsList)
+        val activeAppsCount = mostUsedStats.activeAppsCount
+        val mostUsedAppPackage = mostUsedStats.mostUsedAppPackage
+        val mostUsedPercentage = mostUsedStats.mostUsedPercentage
         val mostUsedAppName = resolveAppName(context, mostUsedAppPackage)
 
         // 3. Current week streak (distinct days active in current calendar week)
@@ -295,10 +295,66 @@ class HistoryRepository(private val context: Context) {
     }
 
     companion object {
+        private val _dataUpdates = MutableSharedFlow<Unit>(replay = 1, extraBufferCapacity = 1)
+        val dataUpdates: SharedFlow<Unit> = _dataUpdates.asSharedFlow()
+
+        fun notifyDataUpdated() {
+            _dataUpdates.tryEmit(Unit)
+        }
+
         data class PeakStats(
             val peakHourRange: String,
             val peakPercentageVsAvg: String
         )
+
+        data class AppStat(
+            val packageName: String,
+            val words: Long,
+            val count: Int
+        )
+
+        data class MostUsedAppStats(
+            val activeAppsCount: Int,
+            val mostUsedAppPackage: String?,
+            val mostUsedAppWords: Long,
+            val mostUsedPercentage: Int
+        )
+
+        private val IGNORED_PACKAGES = setOf("unknown", "system", "android", "com.android.systemui", "com.openwispr")
+        private val IGNORED_KEYWORDS = listOf("inputmethod", ".ime", "keyboard", "latin", "honeyboard", "swiftkey", "fleksy")
+
+        fun isIgnoredPackage(packageName: String?): Boolean {
+            if (packageName.isNullOrBlank()) return true
+            val lower = packageName.lowercase()
+            return lower in IGNORED_PACKAGES || IGNORED_KEYWORDS.any { lower.contains(it) }
+        }
+
+        fun calculateMostUsedAppStats(appStats: List<AppStat>): MostUsedAppStats {
+            val valid = appStats.filter { !isIgnoredPackage(it.packageName) }
+            if (valid.isEmpty()) {
+                return MostUsedAppStats(
+                    activeAppsCount = 0,
+                    mostUsedAppPackage = null,
+                    mostUsedAppWords = 0L,
+                    mostUsedPercentage = 0
+                )
+            }
+            val activeCount = valid.size
+            val totalAppWords = valid.sumOf { it.words }
+            val topApp = valid.maxWithOrNull(compareBy<AppStat>({ it.words }, { it.count }))
+            val topWords = topApp?.words ?: 0L
+            val pct = if (totalAppWords > 0L && topApp != null && topWords > 0L) {
+                ((topWords.toDouble() / totalAppWords.toDouble()) * 100).toInt().coerceIn(0, 100)
+            } else {
+                0
+            }
+            return MostUsedAppStats(
+                activeAppsCount = activeCount,
+                mostUsedAppPackage = topApp?.packageName,
+                mostUsedAppWords = topWords,
+                mostUsedPercentage = pct
+            )
+        }
 
         fun calculatePeakStats(hourlyCounts: Map<Int, Long>): PeakStats {
             val activeHours = hourlyCounts.filter { it.value > 0 }
@@ -319,17 +375,24 @@ class HistoryRepository(private val context: Context) {
         }
 
         fun resolveAppName(context: Context, packageName: String?): String {
-            if (packageName.isNullOrBlank()) return "--"
+            if (isIgnoredPackage(packageName)) return "--"
             return try {
                 val pm = context.packageManager
-                val appInfo = pm.getApplicationInfo(packageName, 0)
+                val appInfo = pm.getApplicationInfo(packageName!!, 0)
                 pm.getApplicationLabel(appInfo).toString()
             } catch (e: Exception) {
                 when {
-                    packageName.contains("inputmethod.latin") -> "Gboard"
-                    packageName.contains("whatsapp") -> "WhatsApp"
+                    packageName!!.contains("whatsapp") -> "WhatsApp"
                     packageName.contains("chrome") -> "Chrome"
                     packageName.contains("telegram") -> "Telegram"
+                    packageName.contains("gmail") || packageName.contains(".gm") -> "Gmail"
+                    packageName.contains("slack") -> "Slack"
+                    packageName.contains("signal") -> "Signal"
+                    packageName.contains("twitter") || packageName.contains(".x") -> "X"
+                    packageName.contains("keep") -> "Keep"
+                    packageName.contains("notes") -> "Notes"
+                    packageName.contains("discord") -> "Discord"
+                    packageName.contains("messages") -> "Messages"
                     else -> packageName.substringAfterLast('.').replaceFirstChar {
                         if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
                     }

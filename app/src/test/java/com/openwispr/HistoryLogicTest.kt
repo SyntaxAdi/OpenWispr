@@ -126,22 +126,95 @@ class HistoryLogicTest {
     }
 
     @Test
-    fun testMostUsedAppPercentageCalculation() {
-        // Zero recordings
-        val totalWordsZero: Long = System.currentTimeMillis().let { 0L }
-        val topAppWordsZero = 0L
-        val pctZero = if (totalWordsZero > 0 && topAppWordsZero > 0) {
-            ((topAppWordsZero.toDouble() / totalWordsZero.toDouble()) * 100).toInt().coerceIn(0, 100)
-        } else 0
-        assertEquals(0, pctZero)
+    fun testIsIgnoredPackage() {
+        // Ignored cases
+        assertTrue(com.openwispr.data.HistoryRepository.isIgnoredPackage(null))
+        assertTrue(com.openwispr.data.HistoryRepository.isIgnoredPackage(""))
+        assertTrue(com.openwispr.data.HistoryRepository.isIgnoredPackage("   "))
+        assertTrue(com.openwispr.data.HistoryRepository.isIgnoredPackage("unknown"))
+        assertTrue(com.openwispr.data.HistoryRepository.isIgnoredPackage("SYSTEM"))
+        assertTrue(com.openwispr.data.HistoryRepository.isIgnoredPackage("android"))
+        assertTrue(com.openwispr.data.HistoryRepository.isIgnoredPackage("com.android.systemui"))
+        assertTrue(com.openwispr.data.HistoryRepository.isIgnoredPackage("com.openwispr"))
+        assertTrue(com.openwispr.data.HistoryRepository.isIgnoredPackage("com.google.android.inputmethod.latin"))
+        assertTrue(com.openwispr.data.HistoryRepository.isIgnoredPackage("com.samsung.android.honeyboard"))
+        assertTrue(com.openwispr.data.HistoryRepository.isIgnoredPackage("com.touchtype.swiftkey"))
+        assertTrue(com.openwispr.data.HistoryRepository.isIgnoredPackage("com.syntellia.fleksy.keyboard"))
 
-        // 68% share (e.g. 680 of 1000 words)
-        val totalWords = 1000L
-        val topAppWords = 680L
-        val pct = if (totalWords > 0 && topAppWords > 0) {
-            ((topAppWords.toDouble() / totalWords.toDouble()) * 100).toInt().coerceIn(0, 100)
-        } else 0
-        assertEquals(68, pct)
+        // Valid user applications
+        assertFalse(com.openwispr.data.HistoryRepository.isIgnoredPackage("org.telegram.messenger"))
+        assertFalse(com.openwispr.data.HistoryRepository.isIgnoredPackage("com.whatsapp"))
+        assertFalse(com.openwispr.data.HistoryRepository.isIgnoredPackage("com.android.chrome"))
+        assertFalse(com.openwispr.data.HistoryRepository.isIgnoredPackage("com.google.android.gm"))
+        assertFalse(com.openwispr.data.HistoryRepository.isIgnoredPackage("com.Slack"))
+    }
+
+    @Test
+    fun testCalculateMostUsedAppStats_EmptyAndIgnored() {
+        // 1. Completely empty
+        val emptyResult = com.openwispr.data.HistoryRepository.calculateMostUsedAppStats(emptyList())
+        assertEquals(0, emptyResult.activeAppsCount)
+        assertEquals(null, emptyResult.mostUsedAppPackage)
+        assertEquals(0L, emptyResult.mostUsedAppWords)
+        assertEquals(0, emptyResult.mostUsedPercentage)
+
+        // 2. Only ignored/unknown packages
+        val ignoredResult = com.openwispr.data.HistoryRepository.calculateMostUsedAppStats(
+            listOf(
+                com.openwispr.data.HistoryRepository.Companion.AppStat("unknown", 500L, 10),
+                com.openwispr.data.HistoryRepository.Companion.AppStat("com.google.android.inputmethod.latin", 200L, 5),
+                com.openwispr.data.HistoryRepository.Companion.AppStat("com.openwispr", 100L, 2)
+            )
+        )
+        assertEquals(0, ignoredResult.activeAppsCount)
+        assertEquals(null, ignoredResult.mostUsedAppPackage)
+        assertEquals(0L, ignoredResult.mostUsedAppWords)
+        assertEquals(0, ignoredResult.mostUsedPercentage)
+    }
+
+    @Test
+    fun testCalculateMostUsedAppStats_DynamicAndFiltering() {
+        // WhatsApp with 100 words (5 count), Telegram with 50 words (1 count), mixed with 770 words of unknown
+        val stats1 = com.openwispr.data.HistoryRepository.calculateMostUsedAppStats(
+            listOf(
+                com.openwispr.data.HistoryRepository.Companion.AppStat("com.whatsapp", 100L, 5),
+                com.openwispr.data.HistoryRepository.Companion.AppStat("org.telegram.messenger", 50L, 1),
+                com.openwispr.data.HistoryRepository.Companion.AppStat("unknown", 770L, 15)
+            )
+        )
+        // Active apps count must only count real apps (2, not 3)
+        assertEquals(2, stats1.activeAppsCount)
+        assertEquals("com.whatsapp", stats1.mostUsedAppPackage)
+        assertEquals(100L, stats1.mostUsedAppWords)
+        // 100 out of 150 valid app words = 66% or 67%
+        assertEquals(66, stats1.mostUsedPercentage)
+
+        // Now user uses Telegram more, adding 150 words (total 200 words) -> Telegram overtakes WhatsApp!
+        val stats2 = com.openwispr.data.HistoryRepository.calculateMostUsedAppStats(
+            listOf(
+                com.openwispr.data.HistoryRepository.Companion.AppStat("com.whatsapp", 100L, 5),
+                com.openwispr.data.HistoryRepository.Companion.AppStat("org.telegram.messenger", 200L, 3),
+                com.openwispr.data.HistoryRepository.Companion.AppStat("unknown", 770L, 15)
+            )
+        )
+        assertEquals(2, stats2.activeAppsCount)
+        assertEquals("org.telegram.messenger", stats2.mostUsedAppPackage)
+        assertEquals(200L, stats2.mostUsedAppWords)
+        // 200 out of 300 valid app words = 66%
+        assertEquals(66, stats2.mostUsedPercentage)
+    }
+
+    @Test
+    fun testCalculateMostUsedAppStats_TieBreakerByCount() {
+        // Two apps with identical words: one with more dictations wins
+        val tieStats = com.openwispr.data.HistoryRepository.calculateMostUsedAppStats(
+            listOf(
+                com.openwispr.data.HistoryRepository.Companion.AppStat("com.whatsapp", 100L, 10),
+                com.openwispr.data.HistoryRepository.Companion.AppStat("com.android.chrome", 100L, 2)
+            )
+        )
+        assertEquals("com.whatsapp", tieStats.mostUsedAppPackage)
+        assertEquals(50, tieStats.mostUsedPercentage)
     }
 
     @Test

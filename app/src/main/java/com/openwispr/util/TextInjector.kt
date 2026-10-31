@@ -9,8 +9,13 @@ import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.Toast
+import com.openwispr.data.HistoryRepository
 
 object TextInjector {
+    data class InjectionResult(
+        val success: Boolean,
+        val targetPackage: String? = null
+    )
     fun isPasswordField(node: AccessibilityNodeInfo?): Boolean {
         if (node == null) return false
         if (node.isPassword) return true
@@ -100,13 +105,14 @@ object TextInjector {
         return null
     }
 
-    fun inject(service: AccessibilityService, text: String): Boolean {
+    fun inject(service: AccessibilityService, text: String): InjectionResult {
         val target = findTargetNode(service)
+        val targetPkg = target?.packageName?.toString()?.takeIf { !HistoryRepository.isIgnoredPackage(it) }
 
         // Security check: Refuse injection and suppress clipboard fallback on secure credential fields
         if (isPasswordField(target)) {
             Toast.makeText(service, "Voice dictation disabled on password fields", Toast.LENGTH_SHORT).show()
-            return false
+            return InjectionResult(success = false, targetPackage = targetPkg)
         }
 
         var safe = Constants.sanitizeOutput(text)
@@ -116,8 +122,11 @@ object TextInjector {
             safe = Constants.sanitizeOutput(safe)
         }
 
-        if (target != null && tryDirect(service, target, safe)) return true
-        return copyToClipboard(service, safe)
+        if (target != null && tryDirect(service, target, safe)) {
+            return InjectionResult(success = true, targetPackage = targetPkg)
+        }
+        val copied = copyToClipboard(service, safe)
+        return InjectionResult(success = copied, targetPackage = targetPkg)
     }
 
     private fun tryDirect(service: AccessibilityService, node: AccessibilityNodeInfo, text: String): Boolean {

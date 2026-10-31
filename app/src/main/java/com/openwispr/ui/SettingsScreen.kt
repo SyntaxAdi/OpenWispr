@@ -3,16 +3,21 @@ package com.openwispr.ui
 import com.openwispr.BuildConfig
 import android.os.Build
 import android.os.SystemClock
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,7 +30,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -48,6 +55,8 @@ import com.openwispr.data.GroqRepository
 import com.openwispr.data.GroqResult
 import com.openwispr.data.SettingsRepository
 import com.openwispr.util.Constants
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -66,7 +75,8 @@ enum class SettingsSection(val title: String, val sectionIndex: String) {
     HardwarePermissions("Hardware & Permissions", "01 HARDWARE"),
     AiCloudEngines("Groq Cloud & AI Engines", "02 AI CLOUD"),
     BubbleAndInterface("Floating Bubble & Timing", "03 INTERFACE"),
-    SystemTelemetry("System & Runtime Telemetry", "04 TELEMETRY")
+    SnoozeSettings("Snooze & Dismissal", "04 SNOOZE"),
+    SystemTelemetry("System & Runtime Telemetry", "05 TELEMETRY")
 }
 
 data class SearchableSetting(
@@ -109,6 +119,8 @@ fun SettingsScreen(
     var bubbleDp by remember { mutableIntStateOf(settings.bubbleDp) }
     var bubbleOpacity by remember { mutableIntStateOf(settings.bubbleOpacity) }
     var maxSec by remember { mutableIntStateOf(settings.maxSec) }
+    var snoozeMinutes by remember { mutableIntStateOf(settings.snoozeDurationMinutes) }
+    var isSnoozed by remember { mutableStateOf(settings.isSnoozed()) }
     var showKey by remember { mutableStateOf(false) }
     var validating by remember { mutableStateOf(false) }
     var validateMsg by remember { mutableStateOf<String?>(null) }
@@ -202,6 +214,18 @@ fun SettingsScreen(
                 section = SettingsSection.BubbleAndInterface
             ),
             SearchableSetting(
+                title = "Snooze Duration",
+                description = "Configurable floating bubble snooze timeout (10m default up to 24 hours)",
+                keywords = listOf("snooze", "duration", "timer", "minutes", "hours", "dismiss", "hide"),
+                section = SettingsSection.SnoozeSettings
+            ),
+            SearchableSetting(
+                title = "Shake to Unsnooze",
+                description = "Hardware accelerometer trigger to immediately bring back snoozed bubble",
+                keywords = listOf("shake", "accelerometer", "unsnooze", "sensor", "gesture", "wake"),
+                section = SettingsSection.SnoozeSettings
+            ),
+            SearchableSetting(
                 title = "System & Runtime Telemetry",
                 description = "App kernel version, Jetpack Compose runtime, KeyStore AES-256 specs",
                 keywords = listOf("telemetry", "system", "kernel", "build", "runtime", "keystore", "specs", "version"),
@@ -255,16 +279,19 @@ fun SettingsScreen(
                 SettingsSubPageHeader(
                     title = currentSection!!.title,
                     onBack = { currentSection = null },
-                    onReset = if (currentSection == SettingsSection.BubbleAndInterface) {
-                        {
-                            bubbleDp = Constants.DEFAULT_BUBBLE_DP
-                            settings.bubbleDp = Constants.DEFAULT_BUBBLE_DP
-                            bubbleOpacity = Constants.DEFAULT_BUBBLE_OPACITY
-                            settings.bubbleOpacity = Constants.DEFAULT_BUBBLE_OPACITY
-                            maxSec = Constants.DEFAULT_MAX_SEC
-                            settings.maxSec = Constants.DEFAULT_MAX_SEC
+                    onReset = when (currentSection) {
+                        SettingsSection.BubbleAndInterface -> {
+                            {
+                                bubbleDp = Constants.DEFAULT_BUBBLE_DP
+                                settings.bubbleDp = Constants.DEFAULT_BUBBLE_DP
+                                bubbleOpacity = Constants.DEFAULT_BUBBLE_OPACITY
+                                settings.bubbleOpacity = Constants.DEFAULT_BUBBLE_OPACITY
+                                maxSec = Constants.DEFAULT_MAX_SEC
+                                settings.maxSec = Constants.DEFAULT_MAX_SEC
+                            }
                         }
-                    } else null
+                        else -> null
+                    }
                 )
             }
 
@@ -359,9 +386,18 @@ fun SettingsScreen(
                             onClick = { currentSection = SettingsSection.BubbleAndInterface }
                         )
 
-                        // 4. System Telemetry
+                        // 4. Snooze & Dismissal
                         SettingsCategoryCard(
                             sectionNumber = "04",
+                            title = "SNOOZE & DISMISSAL",
+                            subtitle = "Drag bubble to snooze, quick presets (10m-24h) & shake unsnooze",
+                            statusTag = SettingsRepository.formatSnoozeDuration(snoozeMinutes).uppercase(),
+                            onClick = { currentSection = SettingsSection.SnoozeSettings }
+                        )
+
+                        // 5. System Telemetry
+                        SettingsCategoryCard(
+                            sectionNumber = "05",
                             title = "SYSTEM TELEMETRY",
                             subtitle = "Kernel version, Compose runtime & TLS specs",
                             statusTag = "v${BuildConfig.VERSION_NAME}",
@@ -929,6 +965,455 @@ fun SettingsScreen(
                             }
                         }
 
+                        SettingsSection.SnoozeSettings -> {
+                            var customHours by remember(snoozeMinutes) { mutableIntStateOf(snoozeMinutes / 60) }
+                            var customMins by remember(snoozeMinutes) { mutableIntStateOf(snoozeMinutes % 60) }
+                            var isCustomExpanded by remember { mutableStateOf(snoozeMinutes !in Constants.PRESET_SNOOZE_MINUTES) }
+
+                            var remainingSeconds by remember(settings.snoozeUntilMs, isSnoozed) {
+                                mutableLongStateOf(((settings.snoozeUntilMs - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L))
+                            }
+                            LaunchedEffect(settings.snoozeUntilMs, isSnoozed) {
+                                if (isSnoozed) {
+                                    while (true) {
+                                        val rem = ((settings.snoozeUntilMs - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L)
+                                        remainingSeconds = rem
+                                        if (rem <= 0L) {
+                                            isSnoozed = false
+                                            break
+                                        }
+                                        delay(1000L)
+                                    }
+                                }
+                            }
+
+                            // 1. Current Snooze Timeout & Dot Matrix Pattern Card
+                            OledSettingsCard {
+                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "CURRENT SNOOZE TIMEOUT",
+                                            fontSize = 9.5.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            color = ColorMuted,
+                                            letterSpacing = 0.6.sp
+                                        )
+
+                                        if (isSnoozed) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(Color(0x33D71921))
+                                                    .border(1.dp, ColorRedAccent, RoundedCornerShape(6.dp))
+                                                    .clickable {
+                                                        settings.unsnooze()
+                                                        isSnoozed = false
+                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    }
+                                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(5.dp)
+                                                            .clip(CircleShape)
+                                                            .background(ColorRedAccent)
+                                                    )
+                                                    Text(
+                                                        text = "UNSNOOZE",
+                                                        fontSize = 8.5.sp,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = ColorRedAccent,
+                                                        letterSpacing = 0.5.sp
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Status Indicator Row
+                                    if (isSnoozed) {
+                                        val remMins = remainingSeconds / 60
+                                        val remSecs = remainingSeconds % 60
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .clip(CircleShape)
+                                                    .background(ColorRedAccent)
+                                            )
+                                            Text(
+                                                text = String.format("STATUS: ACTIVE • %02d:%02d REMAINING", remMins, remSecs),
+                                                fontSize = 9.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold,
+                                                color = ColorRedAccent,
+                                                letterSpacing = 0.5.sp
+                                            )
+                                        }
+                                    } else {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .clip(CircleShape)
+                                                    .background(ColorSubtle)
+                                            )
+                                            Text(
+                                                text = "STATUS: INACTIVE • SNOOZE READY",
+                                                fontSize = 9.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Medium,
+                                                color = ColorSubtle,
+                                                letterSpacing = 0.5.sp
+                                            )
+                                        }
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        DotMatrixText(
+                                            text = SettingsRepository.formatSnoozeDuration(snoozeMinutes).uppercase(),
+                                            dotSize = 2.8.dp,
+                                            dotSpacing = 1.dp,
+                                            charSpacing = 1.4.dp,
+                                            color = Color.White
+                                        )
+
+                                        SnoozeTimeoutGlyphMatrix(isSnoozed = isSnoozed)
+                                    }
+                                }
+                            }
+
+                            // 2. Quick Duration Presets Card
+                            OledSettingsCard {
+                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Text(
+                                        text = "QUICK DURATION PRESETS",
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        color = ColorMuted,
+                                        letterSpacing = 0.6.sp
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Constants.PRESET_SNOOZE_MINUTES.forEach { preset ->
+                                            val isSelected = snoozeMinutes == preset
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .height(96.dp)
+                                                    .clip(RoundedCornerShape(14.dp))
+                                                    .background(if (isSelected) Color(0x22D71921) else ColorDarkBg)
+                                                    .border(
+                                                        width = if (isSelected) 1.5.dp else 1.dp,
+                                                        color = if (isSelected) ColorRedAccent else ColorBorderSubtle,
+                                                        shape = RoundedCornerShape(14.dp)
+                                                    )
+                                                    .clickable {
+                                                        snoozeMinutes = preset
+                                                        settings.snoozeDurationMinutes = preset
+                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Column(
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                    verticalArrangement = Arrangement.Center
+                                                ) {
+                                                    SnoozeClockDialIcon(isSelected = isSelected)
+                                                    Spacer(modifier = Modifier.height(8.dp))
+                                                    Text(
+                                                        text = SettingsRepository.formatSnoozeDuration(preset).uppercase(),
+                                                        fontSize = 10.sp,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                        color = if (isSelected) Color.White else ColorMuted
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 3. Custom Timeout Trigger Button
+                            val arrowRotation by animateFloatAsState(
+                                targetValue = if (isCustomExpanded) 180f else 0f,
+                                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                                label = "CustomExpandRotation"
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(ColorCardBg)
+                                    .border(
+                                        width = if (isCustomExpanded) 1.2.dp else 1.dp,
+                                        color = if (isCustomExpanded) ColorRedAccent else ColorBorderSubtle,
+                                        shape = RoundedCornerShape(14.dp)
+                                    )
+                                    .clickable {
+                                        isCustomExpanded = !isCustomExpanded
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    }
+                                    .padding(horizontal = 16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .clip(CircleShape)
+                                                .background(if (isCustomExpanded) ColorRedAccent else ColorSubtle)
+                                        )
+                                        Text(
+                                            text = "CUSTOM TIMEOUT",
+                                            fontSize = 10.5.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isCustomExpanded) Color.White else ColorMuted,
+                                            letterSpacing = 0.8.sp
+                                        )
+                                    }
+
+                                    Text(
+                                        text = "▼",
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = if (isCustomExpanded) ColorRedAccent else ColorSubtle,
+                                        modifier = Modifier.graphicsLayer { rotationZ = arrowRotation }
+                                    )
+                                }
+                            }
+
+                            // 4. Custom Duration Picker Card (Animated Reveal)
+                            AnimatedVisibility(
+                                visible = isCustomExpanded,
+                                enter = expandVertically(
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioLowBouncy,
+                                        stiffness = Spring.StiffnessMediumLow
+                                    )
+                                ) + fadeIn(animationSpec = tween(250)),
+                                exit = shrinkVertically(
+                                    animationSpec = spring(
+                                        stiffness = Spring.StiffnessMediumLow
+                                    )
+                                ) + fadeOut(animationSpec = tween(200))
+                            ) {
+                                OledSettingsCard {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            text = "CUSTOM DURATION",
+                                            fontSize = 10.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            color = ColorMuted,
+                                            letterSpacing = 0.6.sp
+                                        )
+                                        Text(
+                                            text = "Set snooze time from 1 minute to 24 hours",
+                                            fontSize = 9.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = ColorSubtle
+                                        )
+                                    }
+
+                                    // Top Header Labels Row aligned directly above capsules
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 24.dp),
+                                        horizontalArrangement = Arrangement.SpaceEvenly,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Spacer(modifier = Modifier.width(28.dp))
+                                        Box(modifier = Modifier.width(84.dp), contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = "HOURS",
+                                                fontSize = 9.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold,
+                                                color = ColorSubtle
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(24.dp))
+                                        Box(modifier = Modifier.width(84.dp), contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = "MINUTES",
+                                                fontSize = 9.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold,
+                                                color = ColorSubtle
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(28.dp))
+                                    }
+
+                                    // Flanking Arc Gauges & Number Drums (148dp identical height, Top aligned)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceEvenly,
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        // Left Arc Gauge (148.dp)
+                                        FlankingArcGauge(isLeft = true)
+
+                                        // Hours Drum Wheel (148.dp)
+                                        val hoursValues = remember { (0..24).toList() }
+                                        SnoozeWheelDrum(
+                                            selectedValue = customHours,
+                                            values = hoursValues,
+                                            onValueChange = { newHr ->
+                                                customHours = newHr
+                                                if (customHours == 24) customMins = 0
+                                                val total = (customHours * 60 + customMins).coerceIn(1, 1440)
+                                                snoozeMinutes = total
+                                                settings.snoozeDurationMinutes = total
+                                            }
+                                        )
+
+                                        // Center Twin Dots (aligned vertically with the capsules)
+                                        Box(
+                                            modifier = Modifier.height(148.dp),
+                                            contentAlignment = Alignment.TopCenter
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(top = 26.dp),
+                                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(5.dp)
+                                                        .clip(CircleShape)
+                                                        .background(Color.White)
+                                                )
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(5.dp)
+                                                        .clip(CircleShape)
+                                                        .background(Color.White)
+                                                )
+                                            }
+                                        }
+
+                                        // Minutes Drum Wheel (148.dp)
+                                        val minutesValues = remember { (0..59).toList() }
+                                        SnoozeWheelDrum(
+                                            selectedValue = customMins,
+                                            values = minutesValues,
+                                            onValueChange = { newMin ->
+                                                customMins = newMin
+                                                if (customHours == 24) customHours = 0
+                                                val total = (customHours * 60 + customMins).coerceIn(1, 1440)
+                                                snoozeMinutes = total
+                                                settings.snoozeDurationMinutes = total
+                                            }
+                                        )
+
+                                        // Right Arc Gauge (148.dp)
+                                        FlankingArcGauge(isLeft = false)
+                                    }
+
+                                    // Live Dotted Countdown Timer (shown when snoozed)
+                                    AnimatedVisibility(
+                                        visible = isSnoozed,
+                                        enter = expandVertically() + fadeIn(),
+                                        exit = shrinkVertically() + fadeOut()
+                                    ) {
+                                        SnoozeActiveProgressTimer(
+                                            snoozeUntilMs = settings.snoozeUntilMs,
+                                            totalDurationMinutes = snoozeMinutes,
+                                            onExpire = {
+                                                isSnoozed = false
+                                            }
+                                        )
+                                    }
+
+
+                                    // SET DURATION Pill Action Button
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(50.dp)
+                                            .clip(RoundedCornerShape(25.dp))
+                                            .background(ColorRedAccent)
+                                            .clickable {
+                                                val total = (customHours * 60 + customMins).coerceIn(1, 1440)
+                                                snoozeMinutes = total
+                                                settings.snoozeDurationMinutes = total
+                                                settings.snooze(total)
+                                                isSnoozed = true
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            }
+                                            .padding(horizontal = 24.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Spacer(modifier = Modifier.width(18.dp))
+                                            Text(
+                                                text = "SET DURATION",
+                                                fontSize = 12.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF060709),
+                                                letterSpacing = 1.2.sp
+                                            )
+                                            Text(
+                                                text = "→",
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF060709)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            }
+                            Spacer(modifier = Modifier.height(56.dp))
+                        }
+
                         SettingsSection.SystemTelemetry -> {
                             OledSettingsCard {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1097,13 +1582,13 @@ private fun SettingsSubPageHeader(
             .height(44.dp),
         contentAlignment = Alignment.Center
     ) {
-        // Left back button - 44dp tactile squircle
+        // Left back button - 40dp circular button matching Nothing design
         Box(
             modifier = Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .size(40.dp)
+                .clip(CircleShape)
                 .background(ColorCardBg)
-                .border(1.dp, ColorBorder, RoundedCornerShape(10.dp))
+                .border(1.dp, ColorBorderSubtle, CircleShape)
                 .clickable { onBack() }
                 .align(Alignment.CenterStart),
             contentAlignment = Alignment.Center
@@ -1120,7 +1605,7 @@ private fun SettingsSubPageHeader(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = if (onReset != null) 72.dp else 52.dp)
+                .padding(horizontal = if (onReset != null) 74.dp else 52.dp)
                 .align(Alignment.Center),
             contentAlignment = Alignment.Center
         ) {
@@ -1130,22 +1615,23 @@ private fun SettingsSubPageHeader(
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
-                letterSpacing = 0.6.sp,
+                letterSpacing = 0.8.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
 
-        // Optional Right Action: RESET button (matching Flow Bubble Size reference)
+        // Optional Right Action: RESET pill button with red border
         if (onReset != null) {
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(ColorCardElevated)
-                    .border(1.dp, ColorBorderSubtle, RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(ColorDarkBg)
+                    .border(1.dp, ColorRedAccent, RoundedCornerShape(20.dp))
                     .clickable { onReset() }
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
-                    .align(Alignment.CenterEnd)
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                    .align(Alignment.CenterEnd),
+                contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = "RESET",
@@ -1820,5 +2306,438 @@ private fun TelemetryRow(label: String, value: String) {
             fontWeight = FontWeight.Medium,
             color = Color.White
         )
+    }
+}
+
+@Composable
+private fun SnoozeTimeoutGlyphMatrix(
+    isSnoozed: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "GlyphMatrixAnim")
+    val phase by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 2f * Math.PI.toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(if (isSnoozed) 1600 else 3200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "GlyphPhase"
+    )
+
+    Canvas(modifier = modifier.size(54.dp)) {
+        val cols = 7
+        val rows = 7
+        val dotRadius = 1.8.dp.toPx()
+        val spacingX = size.width / (cols + 1)
+        val spacingY = size.height / (rows + 1)
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val maxDist = size.width * 0.46f
+
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                val x = (c + 1) * spacingX
+                val y = (r + 1) * spacingY
+                val dist = (Offset(x, y) - center).getDistance()
+                if (dist <= maxDist) {
+                    val isRed = (c >= 4 && r >= 2) || (c == 6 && r >= 1)
+                    val wave = (kotlin.math.sin(phase + (c * 0.7f + r * 0.5f)) + 1f) / 2f
+                    if (isRed) {
+                        val pulseScale = if (isSnoozed) 1.8f + 1.2f * wave else 2.0f + 0.4f * wave
+                        val pulseAlpha = if (isSnoozed) 0.20f + 0.50f * wave else 0.25f + 0.20f * wave
+                        drawCircle(
+                            color = ColorRedAccent.copy(alpha = pulseAlpha),
+                            radius = dotRadius * pulseScale,
+                            center = Offset(x, y)
+                        )
+                        drawCircle(
+                            color = ColorRedAccent,
+                            radius = dotRadius * (1f + 0.15f * wave),
+                            center = Offset(x, y)
+                        )
+                    } else {
+                        val ambientAlpha = 0.12f + 0.10f * wave
+                        drawCircle(
+                            color = Color.White.copy(alpha = ambientAlpha),
+                            radius = dotRadius * 0.9f,
+                            center = Offset(x, y)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun SnoozeWheelDrum(
+    selectedValue: Int,
+    values: List<Int>,
+    onValueChange: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
+    val currentSelectedValue by rememberUpdatedState(selectedValue)
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+    val initialIndex = remember { values.indexOf(selectedValue).coerceAtLeast(0) }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
+    val snapFlingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
+    val itemHeight = 44.dp
+    val itemHeightPx = with(LocalDensity.current) { itemHeight.toPx() }
+    var isProgrammaticScroll by remember { mutableStateOf(false) }
+
+    // Sync external changes (e.g. from preset buttons or slider) to listState
+    LaunchedEffect(selectedValue) {
+        val targetIndex = values.indexOf(selectedValue).coerceAtLeast(0)
+        if (listState.firstVisibleItemIndex != targetIndex) {
+            isProgrammaticScroll = true
+            try {
+                listState.animateScrollToItem(targetIndex)
+            } finally {
+                isProgrammaticScroll = false
+            }
+        }
+    }
+
+    // Emit value changes and haptic feedback when user scrolls directly to a new index
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .distinctUntilChanged()
+            .collect { index ->
+                if (!isProgrammaticScroll && index in values.indices) {
+                    val newValue = values[index]
+                    if (newValue != currentSelectedValue) {
+                        currentOnValueChange(newValue)
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
+                }
+            }
+    }
+
+    Box(
+        modifier = modifier
+            .width(84.dp)
+            .height(148.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF0F0F13))
+            .border(1.dp, ColorBorderSubtle, RoundedCornerShape(20.dp)),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        LazyColumn(
+            state = listState,
+            flingBehavior = snapFlingBehavior,
+            contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            itemsIndexed(values) { index, itemValue ->
+                val offsetPx = (index - listState.firstVisibleItemIndex) * itemHeightPx - listState.firstVisibleItemScrollOffset
+                val fraction = offsetPx / itemHeightPx
+
+                val scale = when {
+                    fraction < 0f -> 1.0f
+                    fraction <= 1f -> 1.0f - fraction * 0.286f
+                    fraction <= 2f -> 0.714f - (fraction - 1f) * 0.179f
+                    else -> 0.535f
+                }
+
+                val alpha = when {
+                    fraction < 0f -> (1.0f + fraction * 1.5f).coerceIn(0f, 1f)
+                    fraction <= 1f -> (1.0f - fraction * 0.75f).coerceIn(0.25f, 1f)
+                    fraction <= 2f -> (0.25f - (fraction - 1f) * 0.15f).coerceIn(0.10f, 0.25f)
+                    else -> (0.10f - (fraction - 2f) * 0.10f).coerceIn(0f, 0.10f)
+                }
+
+                val isSelected = fraction in -0.3f..0.3f
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(itemHeight)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            if (index != listState.firstVisibleItemIndex) {
+                                coroutineScope.launch {
+                                    onValueChange(itemValue)
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    isProgrammaticScroll = true
+                                    try {
+                                        listState.animateScrollToItem(index)
+                                    } finally {
+                                        isProgrammaticScroll = false
+                                    }
+                                }
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = String.format("%02d", itemValue),
+                        fontSize = 28.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = Color.White,
+                        modifier = Modifier.graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                            this.alpha = alpha
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SnoozeClockDialIcon(
+    isSelected: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier.size(24.dp)) {
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val r = size.width * 0.38f
+        val dotR = 1.1.dp.toPx()
+        val color = if (isSelected) ColorRedAccent else Color(0x99FFFFFF)
+
+        // 12 hour ticks around the dial
+        for (i in 0 until 12) {
+            val angleRad = (i * 30.0 - 90.0) * (Math.PI / 180.0)
+            val dx = (center.x + r * Math.cos(angleRad)).toFloat()
+            val dy = (center.y + r * Math.sin(angleRad)).toFloat()
+            drawCircle(
+                color = color,
+                radius = dotR,
+                center = Offset(dx, dy)
+            )
+        }
+
+        // Pointer hand pointing to 12 o'clock
+        drawLine(
+            color = color,
+            start = center,
+            end = Offset(center.x, center.y - r * 0.70f),
+            strokeWidth = 1.3.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+
+        // Center hub dot
+        drawCircle(
+            color = color,
+            radius = dotR * 1.3f,
+            center = center
+        )
+    }
+}
+
+@Composable
+private fun FlankingArcGauge(
+    isLeft: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.width(28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Canvas(modifier = Modifier.width(28.dp).height(148.dp)) {
+            val dotCount = 13
+            val dotR = 1.25.dp.toPx()
+            val w = size.width
+            val h = size.height
+
+            for (i in 0 until dotCount) {
+                val f = i.toFloat() / (dotCount - 1)
+                val y = dotR + f * (h - 2 * dotR)
+                val curve = Math.sin(f * Math.PI).toFloat()
+                val x = if (isLeft) {
+                    w * 0.85f - (curve * w * 0.65f)
+                } else {
+                    w * 0.15f + (curve * w * 0.65f)
+                }
+
+                val isActive = i == 6
+                val activeColor = if (isLeft) ColorRedAccent else Color(0xFF2ECC71)
+
+                if (isActive) {
+                    drawCircle(
+                        color = activeColor.copy(alpha = 0.35f),
+                        radius = dotR * 2.8f,
+                        center = Offset(x, y)
+                    )
+                    drawCircle(
+                        color = activeColor,
+                        radius = dotR * 1.8f,
+                        center = Offset(x, y)
+                    )
+                } else {
+                    drawCircle(
+                        color = Color(0x33FFFFFF),
+                        radius = dotR,
+                        center = Offset(x, y)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Text(
+            text = if (isLeft) "0H" else "24H",
+            fontSize = 8.5.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            color = ColorSubtle
+        )
+    }
+}
+
+@Composable
+private fun SnoozeActiveProgressTimer(
+    snoozeUntilMs: Long,
+    totalDurationMinutes: Int,
+    onExpire: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val totalMs = (totalDurationMinutes * 60_000L).coerceAtLeast(1000L)
+    val initialRemMs = (snoozeUntilMs - System.currentTimeMillis()).coerceAtLeast(0L)
+    val initialFraction = (initialRemMs.toFloat() / totalMs.toFloat()).coerceIn(0f, 1f)
+
+    val animatedFraction = remember(snoozeUntilMs) { Animatable(initialFraction) }
+
+    LaunchedEffect(snoozeUntilMs) {
+        val remMs = (snoozeUntilMs - System.currentTimeMillis()).coerceAtLeast(0L)
+        if (remMs > 0L) {
+            animatedFraction.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(
+                    durationMillis = remMs.toInt().coerceAtLeast(1),
+                    easing = LinearEasing
+                )
+            )
+        } else {
+            animatedFraction.snapTo(0f)
+        }
+        onExpire()
+    }
+
+    var remainingSeconds by remember(snoozeUntilMs) {
+        mutableLongStateOf(((snoozeUntilMs - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L))
+    }
+
+    LaunchedEffect(snoozeUntilMs) {
+        while (true) {
+            val rem = ((snoozeUntilMs - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L)
+            remainingSeconds = rem
+            if (rem <= 0L) break
+            val delayMs = ((snoozeUntilMs - System.currentTimeMillis()) % 1000L).coerceAtLeast(50L)
+            delay(delayMs)
+        }
+    }
+
+    val remMins = remainingSeconds / 60
+    val remSecs = remainingSeconds % 60
+
+    val infiniteTransition = rememberInfiniteTransition(label = "TimerPulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "PulseAlpha"
+    )
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(ColorRedAccent.copy(alpha = pulseAlpha))
+                )
+                Text(
+                    text = "SNOOZE ACTIVE",
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = ColorRedAccent,
+                    letterSpacing = 0.6.sp
+                )
+            }
+
+            Text(
+                text = String.format("%02d:%02d REMAINING", remMins, remSecs),
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                letterSpacing = 0.5.sp
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(24.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val dotCount = 36
+                val dotR = 1.4.dp.toPx()
+                val cy = size.height / 2f
+                val currentProgress = animatedFraction.value * dotCount
+
+                for (i in 0 until dotCount) {
+                    val dotF = i.toFloat() / (dotCount - 1)
+                    val cx = dotF * size.width
+                    val diff = currentProgress - i
+
+                    when {
+                        diff >= 1f -> {
+                            drawCircle(
+                                color = ColorRedAccent,
+                                radius = dotR,
+                                center = Offset(cx, cy)
+                            )
+                        }
+                        diff > 0f -> {
+                            val leadingAlpha = diff.coerceIn(0f, 1f)
+                            drawCircle(
+                                color = ColorRedAccent.copy(alpha = leadingAlpha * pulseAlpha * 0.5f),
+                                radius = dotR * (1.5f + 1.5f * leadingAlpha),
+                                center = Offset(cx, cy)
+                            )
+                            drawCircle(
+                                color = Color.White.copy(alpha = leadingAlpha),
+                                radius = dotR * (0.9f + 0.6f * leadingAlpha),
+                                center = Offset(cx, cy)
+                            )
+                        }
+                        else -> {
+                            drawCircle(
+                                color = Color(0x30FFFFFF),
+                                radius = dotR * 0.9f,
+                                center = Offset(cx, cy)
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }

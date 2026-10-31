@@ -166,6 +166,24 @@ class SettingsRepository(context: Context) {
         get() = sp.getInt("max_sec", Constants.DEFAULT_MAX_SEC)
         set(v) = sp.edit().putInt("max_sec", v.coerceIn(Constants.MIN_REC_SEC, Constants.MAX_REC_SEC)).apply()
 
+    var snoozeDurationMinutes: Int
+        get() = sp.getInt("snooze_duration_minutes", Constants.DEFAULT_SNOOZE_MINUTES)
+        set(v) = sp.edit().putInt("snooze_duration_minutes", v.coerceIn(Constants.MIN_SNOOZE_MINUTES, Constants.MAX_SNOOZE_MINUTES)).apply()
+
+    var snoozeUntilMs: Long
+        get() = sp.getLong("snooze_until_ms", 0L)
+        set(v) = sp.edit().putLong("snooze_until_ms", v).apply()
+
+    fun isSnoozed(): Boolean = System.currentTimeMillis() < snoozeUntilMs
+
+    fun snooze(minutes: Int = snoozeDurationMinutes) {
+        snoozeUntilMs = System.currentTimeMillis() + (minutes * 60 * 1000L)
+    }
+
+    fun unsnooze() {
+        snoozeUntilMs = 0L
+    }
+
     var customBaseSystemPrompt: String
         get() = sp.getString("custom_system_prompt", Constants.SYSTEM_PROMPT) ?: Constants.SYSTEM_PROMPT
         set(v) = sp.edit().putString("custom_system_prompt", v.trim()).apply()
@@ -338,6 +356,16 @@ class SettingsRepository(context: Context) {
     }
 
     companion object {
+        fun formatSnoozeDuration(minutes: Int): String {
+            val h = minutes / 60
+            val m = minutes % 60
+            return when {
+                h > 0 && m > 0 -> "${h}h ${m}m"
+                h > 0 -> if (h == 1) "1 hour" else "$h hours"
+                else -> "$m min"
+            }
+        }
+
         fun applyFormalityStyling(text: String, mode: FormalityMode): String {
             return when (mode) {
                 FormalityMode.FORMAL -> {
